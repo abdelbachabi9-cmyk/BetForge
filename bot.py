@@ -33,7 +33,8 @@ from zoneinfo import ZoneInfo
 try:
     from telegram import Update, BotCommand
     from telegram.ext import (
-        Application, CommandHandler, ContextTypes, JobQueue
+        Application, CommandHandler, ContextTypes, JobQueue,
+        ApplicationBuilder
     )
     from telegram.constants import ParseMode
 except ImportError:
