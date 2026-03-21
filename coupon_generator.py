@@ -1154,15 +1154,46 @@ def run_pipeline() -> Tuple[List[dict], str]:
         logger.info("  ↳ Appel aux APIs en temps réel…")
         data = fetcher.get_demo_data()  # Fallback si APIs non configurées
 
-        # Tentative de récupération des données réelles
+        # Récupération des données réelles : matchs + classements
         real_fixtures = []
+        team_stats: Dict[str, dict] = {}
+
         for code in FOOTBALL_COMPETITIONS:
             fixtures = fetcher.fetch_football_fixtures(code)
+            standings = fetcher.fetch_football_standings(code)
+
+            # Construire les stats par équipe depuis le classement
+            for entry in standings:
+                if entry["played"] >= POISSON_PARAMS["min_matches"]:
+                    team_stats[entry["team"]] = {
+                        "goals_avg":    entry["goals_for"]     / entry["played"],
+                        "conceded_avg": entry["goals_against"] / entry["played"],
+                        "matches":      entry["played"],
+                    }
+
             real_fixtures.extend(fixtures)
 
-        if real_fixtures:
-            logger.info(f"  ↳ {len(real_fixtures)} matchs récupérés depuis football-data.org")
-            # On pourrait enrichir data["football"] ici avec des données réelles
+        # Enrichir les fixtures avec les stats d'équipes pour le modèle Poisson
+        enriched = []
+        for fix in real_fixtures:
+            home_s = team_stats.get(fix["home"])
+            away_s = team_stats.get(fix["away"])
+            if home_s and away_s:
+                fix["home_goals_avg"]    = home_s["goals_avg"]
+                fix["away_goals_avg"]    = away_s["goals_avg"]
+                fix["home_conceded_avg"] = home_s["conceded_avg"]
+                fix["away_conceded_avg"] = away_s["conceded_avg"]
+                fix["home_matches"]      = home_s["matches"]
+                fix["away_matches"]      = away_s["matches"]
+                enriched.append(fix)
+
+        if enriched:
+            logger.info(f"  ↳ {len(enriched)} matchs enrichis depuis football-data.org")
+            data["football"] = enriched
+        elif real_fixtures:
+            logger.info(f"  ↳ {len(real_fixtures)} matchs récupérés mais stats manquantes — fallback démo")
+        else:
+            logger.info("  ↳ Aucun match réel trouvé — fallback données démo")
 
     # ── 2. Modélisation football ──────────────────────────────────
     logger.info("📐 Étape 2/5 : Modélisation Poisson-Dixon-Coles (football)…")
