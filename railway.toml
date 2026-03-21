@@ -1,0 +1,12 @@
+# ============================================================
+# railway.toml — Configuration Railway pour APEX Bot
+# ============================================================
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+# Worker longue durée (pas un serveur web)
+startCommand = "python bot.py"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
