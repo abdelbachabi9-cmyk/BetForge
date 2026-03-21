@@ -117,7 +117,8 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
         lines.append(f"*SÉLECTION {i}* {emoji} {esc(bet['competition'])}")
         lines.append(f"🆚 {esc(bet['match'])}")
         lines.append(f"📌 *{esc(bet['bet_type'])}*")
-        lines.append(f"💶 Cote : *{esc(f\"{bet['odd']:.2f}\")}*")
+        odd_str = f"{bet['odd']:.2f}"
+        lines.append(f"💶 Cote : *{esc(odd_str)}*")
         lines.append(
             f"📈 Proba modèle : {esc(str(bet['p_model']))}% "
             f"\\| Edge : \\+{esc(str(bet['value']))}%"
