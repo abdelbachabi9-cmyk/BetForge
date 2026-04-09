@@ -5,20 +5,23 @@
 #   football-data.org : https://www.football-data.org/client/register
 #   the-odds-api.com  : https://the-odds-api.com/#get-access
 #   thesportsdb.com   : API publique, pas de clé requise (tier 1)
+#
+# IMPORTANT : Ne mettez JAMAIS vos clés API en dur dans ce fichier.
+# Utilisez les variables d'environnement (Railway ou fichier .env local).
 # ============================================================
 
-# ─── CLÉS API ───────────────────────────────────────────────
+import os
+
+# ─── CLÉS API (lues depuis les variables d'environnement) ───
 API_KEYS = {
     # football-data.org — clé gratuite (10 req/min)
-    # Remplacez par votre propre clé obtenue sur football-data.org
-    "football_data": "212c135f1d204cf3a48aef938d97b7f3",
+    "football_data": os.getenv("FOOTBALL_DATA_KEY", ""),
 
     # the-odds-api.com — tier gratuit (500 req/mois)
-    # Remplacez par votre propre clé
-    "odds_api": "6c7143e0e5d7ec7e44f273c513dff446",
+    "odds_api": os.getenv("ODDS_API_KEY", ""),
 
     # api-football via RapidAPI — tier gratuit (100 req/jour)
-    "api_football": "demo",
+    "api_football": os.getenv("API_FOOTBALL_KEY", "demo"),
 }
 
 # ─── ENDPOINTS API ──────────────────────────────────────────
@@ -101,4 +104,5 @@ NETWORK = {
 
 # ─── MODE DÉMO ──────────────────────────────────────────────
 # Si True, utilise des données simulées réalistes (pas d'appels API)
-DEMO_MODE = False  # Passez à False si vous avez des clés API valides
+# Contrôlé par la variable d'environnement DEMO_MODE (défaut : false)
+DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
