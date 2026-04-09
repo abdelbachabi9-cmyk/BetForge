@@ -19,14 +19,15 @@ Variables d'environnement requises (Railway) :
     TELEGRAM_CHAT_ID — ID du chat/canal où envoyer le coupon automatique
     BOT_SEND_HOUR    — Heure d'envoi automatique (défaut : 8)
     BOT_SEND_MINUTE  — Minute d'envoi (défaut : 0)
-    DEMO_MODE        — true/false (défaut : true)
+    DEMO_MODE        — true/false (défaut : false)
 """
 
 import os
 import sys
 import logging
 import asyncio
-from datetime import datetime, time as dt_time
+import functools
+from datetime import datetime, timedelta, time as dt_time
 from zoneinfo import ZoneInfo
 
 # ── Bibliothèques Telegram ────────────────────────────────────────────
@@ -61,15 +62,29 @@ logger = logging.getLogger("APEX-Bot")
 # ── Variables d'environnement ─────────────────────────────────────────
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-BOT_SEND_HOUR    = int(os.getenv("BOT_SEND_HOUR",   "8"))
-BOT_SEND_MINUTE  = int(os.getenv("BOT_SEND_MINUTE", "0"))
 TIMEZONE         = os.getenv("TIMEZONE", "Europe/Paris")
-DEMO_MODE        = os.getenv("DEMO_MODE", "true").lower() == "true"
+DEMO_MODE        = os.getenv("DEMO_MODE", "false").lower() == "true"
 
-# Surcharge du mode démo depuis l'env (priorité sur config.py)
-if DEMO_MODE != CONFIG_DEMO_MODE:
-    import config
-    config.DEMO_MODE = DEMO_MODE
+# Validation des variables d'environnement numériques
+try:
+    BOT_SEND_HOUR = int(os.getenv("BOT_SEND_HOUR", "8"))
+    if not (0 <= BOT_SEND_HOUR <= 23):
+        raise ValueError
+except ValueError:
+    logger.warning("BOT_SEND_HOUR invalide, utilisation de la valeur par défaut (8)")
+    BOT_SEND_HOUR = 8
+
+try:
+    BOT_SEND_MINUTE = int(os.getenv("BOT_SEND_MINUTE", "0"))
+    if not (0 <= BOT_SEND_MINUTE <= 59):
+        raise ValueError
+except ValueError:
+    logger.warning("BOT_SEND_MINUTE invalide, utilisation de la valeur par défaut (0)")
+    BOT_SEND_MINUTE = 0
+
+# Synchronisation du mode démo avec config.py
+import config
+config.DEMO_MODE = DEMO_MODE
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -86,7 +101,7 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
 
     # Calculs globaux
     total_odd  = round(
-        __import__("functools").reduce(lambda x, y: x * y, [b["odd"] for b in coupon]), 2
+        functools.reduce(lambda x, y: x * y, [b["odd"] for b in coupon]), 2
     )
     avg_edge   = round(sum(b["value"]      for b in coupon) / len(coupon), 2)
     avg_conf   = round(sum(b["confidence"] for b in coupon) / len(coupon), 1)
@@ -154,7 +169,7 @@ def generate_coupon_message() -> str:
     try:
         logger.info("🔄 Génération du coupon APEX en cours…")
         coupon, _ = run_pipeline()
-        date = (datetime.now() + __import__("datetime").timedelta(days=1)).strftime("%d/%m/%Y")
+        date = (datetime.now() + timedelta(days=1)).strftime("%d/%m/%Y")
         return format_coupon_telegram(coupon, date)
     except Exception as e:
         logger.error(f"Erreur lors de la génération : {e}", exc_info=True)
@@ -211,7 +226,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         hour=BOT_SEND_HOUR, minute=BOT_SEND_MINUTE, second=0, microsecond=0
     )
     if next_send <= now:
-        next_send = next_send.replace(day=next_send.day + 1)
+        next_send = next_send + timedelta(days=1)
 
     diff       = next_send - now
     heures     = diff.seconds // 3600
