@@ -58,7 +58,7 @@ try:
     )
 except ImportError:
     # Valeurs par défaut si config.py est absent
-    API_KEYS = {"football_data": "demo", "odds_api": "demo"}
+    API_KEYS = {"football_data": "", "odds_api": ""}
     ENDPOINTS = {
         "football_data_base":   "https://api.football-data.org/v4",
         "odds_api_base":        "https://api.the-odds-api.com/v4",
@@ -137,7 +137,7 @@ class DataFetcher:
         Récupère les matchs de demain depuis football-data.org.
         Retourne une liste de dicts normalisés.
         """
-        if DEMO_MODE or API_KEYS["football_data"] == "demo":
+        if DEMO_MODE or not API_KEYS["football_data"]:
             logger.info(f"Mode démo actif — données simulées pour {competition_code}")
             return []
 
@@ -166,7 +166,7 @@ class DataFetcher:
         Récupère le classement d'une compétition pour calculer
         les forces d'attaque/défense.
         """
-        if DEMO_MODE or API_KEYS["football_data"] == "demo":
+        if DEMO_MODE or not API_KEYS["football_data"]:
             return []
 
         url = f"{ENDPOINTS['football_data_base']}/competitions/{competition_code}/standings"
@@ -195,7 +195,7 @@ class DataFetcher:
         Récupère les cotes en temps réel depuis the-odds-api.com.
         Retourne les marchés 1X2 et Over/Under.
         """
-        if DEMO_MODE or API_KEYS["odds_api"] == "demo":
+        if DEMO_MODE or not API_KEYS["odds_api"]:
             return []
 
         url = f"{ENDPOINTS['odds_api_base']}/sports/{sport_key}/odds"
