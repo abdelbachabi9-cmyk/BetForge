@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-╔══════════════════════════════════════════════════════════════════╗
-║              APEX — Bot Telegram Coupon Sportif                  ║
-║   Commandes manuelles + envoi automatique quotidien              ║
-╚══════════════════════════════════════════════════════════════════╝
+ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+â              APEX â Bot Telegram Coupon Sportif                  â
+â   Commandes manuelles + envoi automatique quotidien              â
+ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 Commandes disponibles :
-    /start        — Message de bienvenue
-    /coupon       — Génère et envoie le coupon du jour
-    /status       — Statut du bot et prochaine génération
-    /aide         — Liste des commandes
+    /start        â Message de bienvenue
+    /coupon       â GÃ©nÃ¨re et envoie le coupon du jour
+    /status       â Statut du bot et prochaine gÃ©nÃ©ration
+    /aide         â Liste des commandes
 
-Envoi automatique : chaque jour à l'heure configurée (BOT_SEND_HOUR)
+Envoi automatique : chaque jour Ã  l'heure configurÃ©e (BOT_SEND_HOUR)
 
 Variables d'environnement requises (Railway) :
-    TELEGRAM_TOKEN   — Token du bot (obtenu via @BotFather)
-    TELEGRAM_CHAT_ID — ID du chat/canal où envoyer le coupon automatique
-    BOT_SEND_HOUR    — Heure d'envoi automatique (défaut : 8)
-    BOT_SEND_MINUTE  — Minute d'envoi (défaut : 0)
-    DEMO_MODE        — true/false (défaut : false)
+    TELEGRAM_TOKEN   â Token du bot (obtenu via @BotFather)
+    TELEGRAM_CHAT_ID â ID du chat/canal oÃ¹ envoyer le coupon automatique
+    BOT_SEND_HOUR    â Heure d'envoi automatique (dÃ©faut : 8)
+    BOT_SEND_MINUTE  â Minute d'envoi (dÃ©faut : 0)
+    DEMO_MODE        â true/false (dÃ©faut : false)
 """
 
 import os
@@ -30,7 +30,7 @@ import functools
 from datetime import datetime, timedelta, time as dt_time
 from zoneinfo import ZoneInfo
 
-# ── Bibliothèques Telegram ────────────────────────────────────────────
+# ââ BibliothÃ¨ques Telegram ââââââââââââââââââââââââââââââââââââââââââââ
 try:
     from telegram import Update, BotCommand
     from telegram.ext import (
@@ -39,39 +39,39 @@ try:
     )
     from telegram.constants import ParseMode
 except ImportError:
-    print("❌ python-telegram-bot manquant. Lancez :")
+    print("â python-telegram-bot manquant. Lancez :")
     print("   pip install python-telegram-bot>=20.0 apscheduler")
     sys.exit(1)
 
-# ── Import du moteur APEX ─────────────────────────────────────────────
+# ââ Import du moteur APEX âââââââââââââââââââââââââââââââââââââââââââââ
 try:
     from coupon_generator import run_pipeline
     from config import DEMO_MODE as CONFIG_DEMO_MODE
 except ImportError as e:
-    print(f"❌ Impossible d'importer coupon_generator.py : {e}")
+    print(f"â Impossible d'importer coupon_generator.py : {e}")
     sys.exit(1)
 
-# ── Configuration du logger ───────────────────────────────────────────
+# ââ Configuration du logger âââââââââââââââââââââââââââââââââââââââââââ
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s │ %(levelname)s │ %(name)s │ %(message)s",
+    format="%(asctime)s â %(levelname)s â %(name)s â %(message)s",
     datefmt="%H:%M:%S"
 )
 logger = logging.getLogger("APEX-Bot")
 
-# ── Variables d'environnement ─────────────────────────────────────────
+# ââ Variables d'environnement âââââââââââââââââââââââââââââââââââââââââ
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TIMEZONE         = os.getenv("TIMEZONE", "Europe/Paris")
 DEMO_MODE        = os.getenv("DEMO_MODE", "false").lower() == "true"
 
-# Validation des variables d'environnement numériques
+# Validation des variables d'environnement numÃ©riques
 try:
     BOT_SEND_HOUR = int(os.getenv("BOT_SEND_HOUR", "8"))
     if not (0 <= BOT_SEND_HOUR <= 23):
         raise ValueError
 except ValueError:
-    logger.warning("BOT_SEND_HOUR invalide, utilisation de la valeur par défaut (8)")
+    logger.warning("BOT_SEND_HOUR invalide, utilisation de la valeur par dÃ©faut (8)")
     BOT_SEND_HOUR = 8
 
 try:
@@ -79,20 +79,20 @@ try:
     if not (0 <= BOT_SEND_MINUTE <= 59):
         raise ValueError
 except ValueError:
-    logger.warning("BOT_SEND_MINUTE invalide, utilisation de la valeur par défaut (0)")
+    logger.warning("BOT_SEND_MINUTE invalide, utilisation de la valeur par dÃ©faut (0)")
     BOT_SEND_MINUTE = 0
 
-# Synchronisation du mode démo avec config.py
+# Synchronisation du mode dÃ©mo avec config.py
 import config
 config.DEMO_MODE = DEMO_MODE
 
 
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # FORMATAGE DU COUPON EN MARKDOWN TELEGRAM
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def _esc(text: str) -> str:
-    """Échappe les caractères spéciaux MarkdownV2 Telegram."""
+    """Ãchappe les caractÃ¨res spÃ©ciaux MarkdownV2 Telegram."""
     special = r"\_*[]()~`>#+-=|{}.!"
     return "".join(f"\\{c}" if c in special else c for c in str(text))
 
@@ -102,7 +102,7 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
     Telegram supporte le gras, l'italique et les blocs de code.
     """
     if not coupon:
-        return "📅 *Pas de matchs disponibles aujourd'hui* — aucun coupon généré\\."
+        return "ð *Pas de matchs disponibles aujourd'hui* â aucun coupon gÃ©nÃ©rÃ©\\."
 
     # Calculs globaux
     total_odd  = round(
@@ -112,123 +112,128 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
     avg_conf   = round(sum(b["confidence"] for b in coupon) / len(coupon), 1)
 
     def esc(text: str) -> str:
-        """Échappe les caractères spéciaux MarkdownV2."""
+        """Ãchappe les caractÃ¨res spÃ©ciaux MarkdownV2."""
         special = r"\_*[]()~`>#+-=|{}.!"
         return "".join(f"\\{c}" if c in special else c for c in str(text))
 
     lines = []
 
-    # ── En-tête ───────────────────────────────────────────────────
-    lines.append(f"🎯 *APEX — COUPON DU JOUR*")
-    lines.append(f"📅 {esc(date)}")
-    lines.append(f"📊 _Modèle Poisson\\-Dixon\\-Coles \\+ ELO \\+ Value Betting_")
+    # ââ En-tÃªte âââââââââââââââââââââââââââââââââââââââââââââââââââ
+    lines.append(f"ð¯ *APEX â COUPON DU JOUR*")
+    lines.append(f"ð {esc(date)}")
+    lines.append(f"ð _ModÃ¨le Poisson \\(correction scores faibles\\) \\+ ELO_")
     lines.append("")
-    lines.append("━" * 30)
+    lines.append("â" * 30)
 
-    # ── Sélections ────────────────────────────────────────────────
+    # ââ SÃ©lections ââââââââââââââââââââââââââââââââââââââââââââââââ
     sport_emoji = {
-        "Football":   "⚽",
-        "Basketball": "🏀",
-        "Tennis":     "🎾",
+        "Football":   "â½",
+        "Basketball": "ð",
+        "Tennis":     "ð¾",
     }
 
     for i, bet in enumerate(coupon, start=1):
-        emoji = sport_emoji.get(bet["sport"], "🏅")
+        emoji = sport_emoji.get(bet["sport"], "ð")
         lines.append(f"")
-        lines.append(f"*SÉLECTION {i}* {emoji} {esc(bet['competition'])}")
-        lines.append(f"🆚 {esc(bet['match'])}")
-        lines.append(f"📌 *{esc(bet['bet_type'])}*")
+        lines.append(f"*SÃLECTION {i}* {emoji} {esc(bet['competition'])}")
+        lines.append(f"ð {esc(bet['match'])}")
+        lines.append(f"ð *{esc(bet['bet_type'])}*")
         odd_str = f"{bet['odd']:.2f}"
-        lines.append(f"💶 Cote : *{esc(odd_str)}*")
+        lines.append(f"ð¶ Cote : *{esc(odd_str)}*")
         lines.append(
-            f"📈 Proba modèle : {esc(str(bet['p_model']))}% "
+            f"ð Proba modÃ¨le : {esc(str(bet['p_model']))}% "
             f"\\| Edge : \\+{esc(str(bet['value']))}%"
         )
-        conf_stars = "⭐" * int(round(bet["confidence"] / 2))
-        lines.append(f"🔒 Confiance : {conf_stars} {esc(str(bet['confidence']))}/10")
-        lines.append("━" * 30)
+        conf_stars = "â­" * int(round(bet["confidence"] / 2))
+        lines.append(f"ð Confiance : {conf_stars} {esc(str(bet['confidence']))}/10")
+        lines.append("â" * 30)
 
-    # ── Résumé ────────────────────────────────────────────────────
+    # ââ RÃ©sumÃ© ââââââââââââââââââââââââââââââââââââââââââââââââââââ
     target_ok = 4.5 <= total_odd <= 6.0
-    status_icon = "✅" if target_ok else "⚠️"
+    status_icon = "â" if target_ok else "â ï¸"
 
     lines.append("")
-    lines.append(f"🎰 *COTE TOTALE : {esc(str(total_odd))}* {status_icon}")
-    lines.append(f"💰 Mise recommandée : 2% du bankroll")
-    lines.append(f"📈 Edge moyen : \\+{esc(str(avg_edge))}%")
-    lines.append(f"🔒 Confiance moyenne : {esc(str(avg_conf))}/10")
-    lines.append(f"📋 Sélections : {len(coupon)}")
+    lines.append(f"ð° *COTE TOTALE : {esc(str(total_odd))}* {status_icon}")
+    lines.append(f"ð° Mise recommandÃ©e : 2% du bankroll")
+    lines.append(f"ð Edge moyen : \\+{esc(str(avg_edge))}%")
+    lines.append(f"ð Confiance moyenne : {esc(str(avg_conf))}/10")
+    lines.append(f"ð SÃ©lections : {len(coupon)}")
     lines.append("")
-    lines.append("━" * 30)
+    lines.append("â" * 30)
     lines.append(
-        "⚠️ _Coupon généré par algorithme statistique\\. "
+        "ð _Variance : ~20% de chances de gain par coupon\\. "
+        "L'edge se manifeste sur 50\\-100 coupons\\._"
+    )
+    lines.append("")
+    lines.append(
+        "â ï¸ _Coupon gÃ©nÃ©rÃ© par algorithme statistique\\. "
         "Les paris comportent un risque de perte\\. "
-        "Jouez de façon responsable\\._"
+        "Jouez de faÃ§on responsable\\._"
     )
 
     return "\n".join(lines)
 
 
 def generate_coupon_message() -> str:
-    """Génère le coupon et retourne le message formaté Telegram."""
+    """GÃ©nÃ¨re le coupon et retourne le message formatÃ© Telegram."""
     try:
-        logger.info("🔄 Génération du coupon APEX en cours…")
+        logger.info("ð GÃ©nÃ©ration du coupon APEX en coursâ¦")
         coupon, _ = run_pipeline()
         date = datetime.now().strftime("%d/%m/%Y")
         return format_coupon_telegram(coupon, date)
     except Exception as e:
-        logger.error(f"Erreur lors de la génération : {e}", exc_info=True)
-        return "❌ Une erreur est survenue lors de la génération du coupon\\.\nVeuillez réessayer dans quelques instants\\."
+        logger.error(f"Erreur lors de la gÃ©nÃ©ration : {e}", exc_info=True)
+        return "â Une erreur est survenue lors de la gÃ©nÃ©ration du coupon\\.\nVeuillez rÃ©essayer dans quelques instants\\."
 
 
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # HANDLERS DES COMMANDES TELEGRAM
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Commande /start — Message de bienvenue."""
+    """Commande /start â Message de bienvenue."""
     user = update.effective_user
-    prenom = user.first_name if user else "là"
+    prenom = user.first_name if user else "lÃ "
 
     msg = (
-        f"🎯 *Bienvenue sur APEX, {_esc(prenom)}\\!*\n\n"
-        "Je suis un bot de prédiction sportive basé sur des modèles "
-        "statistiques avancés \\(Poisson\\-Dixon\\-Coles \\+ ELO\\)\\.\n\n"
+        f"ð¯ *Bienvenue sur APEX, {_esc(prenom)}\\!*\n\n"
+        "Je suis un bot de prÃ©diction sportive basÃ© sur des modÃ¨les "
+        "statistiques avancÃ©s \\(Poisson \\+ correction scores faibles \\+ ELO\\)\\.\n\n"
         "*Commandes disponibles :*\n"
-        "📌 /coupon — Générer le coupon du jour\n"
-        "📊 /status — Statut et prochaine génération\n"
-        "❓ /aide   — Aide complète\n\n"
-        f"⏰ *Envoi automatique :* chaque jour à {BOT_SEND_HOUR:02d}:{BOT_SEND_MINUTE:02d} "
+        "ð /coupon â GÃ©nÃ©rer le coupon du jour\n"
+        "ð /status â Statut et prochaine gÃ©nÃ©ration\n"
+        "â /aide   â Aide complÃ¨te\n\n"
+        f"â° *Envoi automatique :* chaque jour Ã  {BOT_SEND_HOUR:02d}:{BOT_SEND_MINUTE:02d} "
         f"\\({_esc(TIMEZONE)}\\)\n\n"
-        "⚠️ _Les paris comportent un risque de perte\\. Jouez responsablement\\._"
+        "â ï¸ _Les paris comportent un risque de perte\\. Jouez responsablement\\._"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 async def cmd_coupon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Commande /coupon — Génère et envoie le coupon à la demande."""
+    """Commande /coupon â GÃ©nÃ¨re et envoie le coupon Ã  la demande."""
     # Message d'attente
     wait_msg = await update.message.reply_text(
-        "⏳ _Génération du coupon en cours\\.\\.\\._",
+        "â³ _GÃ©nÃ©ration du coupon en cours\\.\\.\\._",
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
-    # Génération dans un thread séparé pour ne pas bloquer le bot
+    # GÃ©nÃ©ration dans un thread sÃ©parÃ© pour ne pas bloquer le bot
     loop = asyncio.get_event_loop()
     message = await loop.run_in_executor(None, generate_coupon_message)
 
     if "Pas de matchs" in message:
-        logger.info("📅 Aucun match aujourd'hui — notification envoyée")
+        logger.info("ð Aucun match aujourd'hui â notification envoyÃ©e")
 
     # Suppression du message d'attente
     await wait_msg.delete()
 
-    # Envoi du coupon (découper si > 4096 caractères)
+    # Envoi du coupon (dÃ©couper si > 4096 caractÃ¨res)
     await send_long_message(update.effective_chat.id, message, context)
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Commande /status — Affiche le statut du bot."""
+    """Commande /status â Affiche le statut du bot."""
     now = datetime.now(ZoneInfo(TIMEZONE))
     next_send = now.replace(
         hour=BOT_SEND_HOUR, minute=BOT_SEND_MINUTE, second=0, microsecond=0
@@ -239,64 +244,69 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     diff       = next_send - now
     heures     = diff.seconds // 3600
     minutes    = (diff.seconds % 3600) // 60
-    mode_label = "🟡 Démo \\(données simulées\\)" if DEMO_MODE else "🟢 Temps réel \\(APIs actives\\)"
+    mode_label = "ð¡ DÃ©mo \\(donnÃ©es simulÃ©es\\)" if DEMO_MODE else "ð¢ Temps rÃ©el \\(APIs actives\\)"
 
     msg = (
-        "📊 *STATUT APEX BOT*\n\n"
-        f"🕐 Heure actuelle : `{now.strftime('%d/%m/%Y %H:%M')}`\n"
-        f"⏰ Prochain coupon : `{next_send.strftime('%d/%m/%Y %H:%M')}`\n"
-        f"⌛ Dans : {heures}h {minutes}min\n"
-        f"🌍 Fuseau : `{TIMEZONE}`\n"
-        f"⚙️ Mode : {mode_label}\n"
-        f"✅ Bot : *Opérationnel*"
+        "ð *STATUT APEX BOT*\n\n"
+        f"ð Heure actuelle : `{now.strftime('%d/%m/%Y %H:%M')}`\n"
+        f"â° Prochain coupon : `{next_send.strftime('%d/%m/%Y %H:%M')}`\n"
+        f"â Dans : {heures}h {minutes}min\n"
+        f"ð Fuseau : `{TIMEZONE}`\n"
+        f"âï¸ Mode : {mode_label}\n"
+        f"â Bot : *OpÃ©rationnel*"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 async def cmd_aide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Commande /aide — Aide complète."""
+    """Commande /aide â Aide complÃ¨te."""
     msg = (
-        "❓ *AIDE APEX BOT*\n\n"
+        "â *AIDE APEX BOT*\n\n"
         "*Commandes :*\n"
-        "▫️ /start  — Message de bienvenue\n"
-        "▫️ /coupon — Générer le coupon du jour maintenant\n"
-        "▫️ /status — Voir le statut et la prochaine génération\n"
-        "▫️ /aide   — Cette aide\n\n"
-        "*Comment ça marche ?*\n"
-        "APEX analyse les matchs du lendemain avec un modèle "
-        "Poisson\\-Dixon\\-Coles pour le football, ELO pour le basket, "
-        "et un modèle surface\\+forme pour le tennis\\.\n\n"
+        "â«ï¸ /start  â Message de bienvenue\n"
+        "â«ï¸ /coupon â GÃ©nÃ©rer le coupon du jour maintenant\n"
+        "â«ï¸ /status â Voir le statut et la prochaine gÃ©nÃ©ration\n"
+        "â«ï¸ /aide   â Cette aide\n\n"
+        "*Comment Ã§a marche ?*\n"
+        "APEX analyse les matchs du lendemain avec un modÃ¨le "
+        "Poisson \\(correction scores faibles\\) pour le football, ELO pour le basket, "
+        "et un modÃ¨le surface\\+forme pour le tennis\\.\n\n"
         "Seuls les paris avec un _edge \\> 5%_ \\(avantage statistique\\) "
-        "sont sélectionnés\\. Le coupon cible une cote totale de ~5\\.\n\n"
-        "*Légende :*\n"
-        "💶 Cote : cote bookmaker simulée\n"
-        "📈 Edge : avantage statistique vs bookmaker\n"
-        "🔒 Confiance : score /10 basé sur proba \\+ edge\n\n"
-        "⚠️ _Jouez de façon responsable\\. Interdit aux mineurs\\._"
+        "sont sÃ©lectionnÃ©s\\. Le coupon cible une cote totale de ~5\\.\n\n"
+        "*LÃ©gende :*\n"
+        "ð¶ Cote : cote bookmaker simulÃ©e\n"
+        "ð Edge : avantage statistique vs bookmaker\n"
+        "ð Confiance : score /10 basÃ© sur le critÃ¨re de Kelly\n\n"
+        "*Comprendre la variance :*\n"
+        "Un coupon combinÃ© Ã  cote ~5\\.0 a ~20% de chances de "
+        "passer\\. MÃªme avec un edge positif, il faut *50 Ã  100 "
+        "coupons* \\(2\\-3 mois\\) pour que l'avantage statistique "
+        "se manifeste\\.\n\n"
+        "â ï¸ _Jouez de faÃ§on responsable\\. Interdit aux mineurs\\._"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
 
 
-# ══════════════════════════════════════════════════════════════════════
-# JOB PLANIFIÉ — ENVOI AUTOMATIQUE QUOTIDIEN
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# JOB PLANIFIÃ â ENVOI AUTOMATIQUE QUOTIDIEN
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 async def scheduled_coupon(context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Job exécuté chaque jour à l'heure configurée.
-    Génère le coupon et l'envoie dans le chat/canal configuré.
+    Job exÃ©cutÃ© chaque jour Ã  l'heure configurÃ©e.
+    GÃ©nÃ¨re le coupon et l'envoie dans le chat/canal configurÃ©.
     """
     if not TELEGRAM_CHAT_ID:
-        logger.warning("TELEGRAM_CHAT_ID non défini — envoi automatique ignoré")
+        logger.warning("TELEGRAM_CHAT_ID non dÃ©fini â envoi automatique ignorÃ©")
         return
 
-    logger.info(f"⏰ Envoi automatique du coupon vers {TELEGRAM_CHAT_ID}")
+    logger.info(f"â° Envoi automatique du coupon vers {TELEGRAM_CHAT_ID}")
 
     loop = asyncio.get_event_loop()
     message = await loop.run_in_executor(None, generate_coupon_message)
 
     try:
-        # Découpage si message trop long
+        # DÃ©coupage si message trop long
         chunks = split_message(message)
         for chunk in chunks:
             await context.bot.send_message(
@@ -304,22 +314,22 @@ async def scheduled_coupon(context: ContextTypes.DEFAULT_TYPE) -> None:
                 text=chunk,
                 parse_mode=ParseMode.MARKDOWN_V2
             )
-        logger.info("✅ Coupon automatique envoyé avec succès")
+        logger.info("â Coupon automatique envoyÃ© avec succÃ¨s")
     except Exception as e:
-        logger.error(f"❌ Erreur envoi automatique : {e}", exc_info=True)
+        logger.error(f"â Erreur envoi automatique : {e}", exc_info=True)
 
 
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # UTILITAIRES
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def split_message(text: str, max_len: int = 4000) -> list:
-    """Découpe un message Telegram en morceaux si > max_len caractères."""
+    """DÃ©coupe un message Telegram en morceaux si > max_len caractÃ¨res."""
     if len(text) <= max_len:
         return [text]
     parts = []
     while len(text) > max_len:
-        # Découper à la dernière ligne avant la limite
+        # DÃ©couper Ã  la derniÃ¨re ligne avant la limite
         cut = text[:max_len].rfind("\n")
         if cut == -1:
             cut = max_len
@@ -332,7 +342,7 @@ def split_message(text: str, max_len: int = 4000) -> list:
 
 async def send_long_message(chat_id, text: str,
                              context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Envoie un message potentiellement long en le découpant."""
+    """Envoie un message potentiellement long en le dÃ©coupant."""
     chunks = split_message(text)
     for chunk in chunks:
         await context.bot.send_message(
@@ -343,40 +353,40 @@ async def send_long_message(chat_id, text: str,
 
 
 async def post_init(application: Application) -> None:
-    """Configure les commandes affichées dans le menu Telegram."""
+    """Configure les commandes affichÃ©es dans le menu Telegram."""
     commands = [
-        BotCommand("start",  "Démarrer le bot"),
-        BotCommand("coupon", "Générer le coupon du jour"),
-        BotCommand("status", "Statut et prochaine génération"),
+        BotCommand("start",  "DÃ©marrer le bot"),
+        BotCommand("coupon", "GÃ©nÃ©rer le coupon du jour"),
+        BotCommand("status", "Statut et prochaine gÃ©nÃ©ration"),
         BotCommand("aide",   "Aide et documentation"),
     ]
     await application.bot.set_my_commands(commands)
-    logger.info("✅ Commandes Telegram enregistrées")
+    logger.info("â Commandes Telegram enregistrÃ©es")
 
 
-# ══════════════════════════════════════════════════════════════════════
-# POINT D'ENTRÉE PRINCIPAL
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# POINT D'ENTRÃE PRINCIPAL
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def main() -> None:
     """Lance le bot Telegram APEX."""
 
-    # ── Vérification du token ─────────────────────────────────────
+    # ââ VÃ©rification du token âââââââââââââââââââââââââââââââââââââ
     if not TELEGRAM_TOKEN:
         logger.error(
-            "❌ TELEGRAM_TOKEN non défini !\n"
+            "â TELEGRAM_TOKEN non dÃ©fini !\n"
             "   Ajoutez la variable d'environnement TELEGRAM_TOKEN\n"
             "   (obtenu via @BotFather sur Telegram)"
         )
         sys.exit(1)
 
-    logger.info("═" * 55)
-    logger.info("  🎯 APEX BOT — Démarrage")
-    logger.info(f"  ⏰ Envoi auto : {BOT_SEND_HOUR:02d}:{BOT_SEND_MINUTE:02d} ({TIMEZONE})")
-    logger.info(f"  ⚙️  Mode : {'Démo' if DEMO_MODE else 'Temps réel'}")
-    logger.info("═" * 55)
+    logger.info("â" * 55)
+    logger.info("  ð¯ APEX BOT â DÃ©marrage")
+    logger.info(f"  â° Envoi auto : {BOT_SEND_HOUR:02d}:{BOT_SEND_MINUTE:02d} ({TIMEZONE})")
+    logger.info(f"  âï¸  Mode : {'DÃ©mo' if DEMO_MODE else 'Temps rÃ©el'}")
+    logger.info("â" * 55)
 
-    # ── Construction de l'application ────────────────────────────
+    # ââ Construction de l'application ââââââââââââââââââââââââââââ
     application = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
@@ -384,13 +394,13 @@ def main() -> None:
         .build()
     )
 
-    # ── Enregistrement des handlers ───────────────────────────────
+    # ââ Enregistrement des handlers âââââââââââââââââââââââââââââââ
     application.add_handler(CommandHandler("start",  cmd_start))
     application.add_handler(CommandHandler("coupon", cmd_coupon))
     application.add_handler(CommandHandler("status", cmd_status))
     application.add_handler(CommandHandler("aide",   cmd_aide))
 
-    # ── Job planifié (envoi automatique quotidien) ────────────────
+    # ââ Job planifiÃ© (envoi automatique quotidien) ââââââââââââââââ
     tz = ZoneInfo(TIMEZONE)
     send_time = dt_time(
         hour=BOT_SEND_HOUR,
@@ -403,10 +413,10 @@ def main() -> None:
         time=send_time,
         name="daily_coupon"
     )
-    logger.info(f"⏰ Job quotidien planifié à {send_time.strftime('%H:%M')} ({TIMEZONE})")
+    logger.info(f"â° Job quotidien planifiÃ© Ã  {send_time.strftime('%H:%M')} ({TIMEZONE})")
 
-    # ── Lancement du bot ──────────────────────────────────────────
-    logger.info("🚀 Bot démarré — en attente des messages…")
+    # ââ Lancement du bot ââââââââââââââââââââââââââââââââââââââââââ
+    logger.info("ð Bot dÃ©marrÃ© â en attente des messagesâ¦")
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True
