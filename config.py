@@ -30,6 +30,7 @@ ENDPOINTS = {
     "odds_api_base":        "https://api.the-odds-api.com/v4",
     "thesportsdb_base":     "https://www.thesportsdb.com/api/v1/json/3",
     "api_football_base":    "https://api-football-v1.p.rapidapi.com/v3",
+    "balldontlie_base":     "https://api.balldontlie.io/v1",
 }
 
 # ─── COMPÉTITIONS FOOTBALL À SURVEILLER ──────────────────────
@@ -43,17 +44,33 @@ FOOTBALL_COMPETITIONS = {
     "CL":   "Ligue des Champions",
 }
 
+# Mapping API-Football league IDs (api-football-v1.p.rapidapi.com)
+API_FOOTBALL_LEAGUES = {
+    61:  "Ligue 1",          # France
+    39:  "Premier League",   # Angleterre
+    78:  "Bundesliga",       # Allemagne
+    140: "La Liga",          # Espagne
+    135: "Serie A",          # Italie
+    2:   "Ligue des Champions",  # UEFA
+}
+
 # Identifiants the-odds-api.com
 ODDS_SPORTS = [
+    # Football (les 5 grands championnats + UCL)
     "soccer_france_ligue_one",
-    "soccer_england_league1",
+    "soccer_epl",
     "soccer_germany_bundesliga",
     "soccer_spain_la_liga",
     "soccer_italy_serie_a",
     "soccer_uefa_champs_league",
+    # Basketball
     "basketball_nba",
     "basketball_euroleague",
+    # Tennis (tournois ATP/WTA actifs selon la saison)
     "tennis_atp_french_open",
+    "tennis_atp_us_open",
+    "tennis_atp_wimbledon",
+    "tennis_atp_australian_open",
 ]
 
 # ─── PARAMÈTRES DU MODÈLE DE POISSON ────────────────────────
