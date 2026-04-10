@@ -53,7 +53,7 @@ except ImportError:
 # Import de la configuration locale
 try:
     from config import (
-        API_KEYS, ENDPOINTS, FOOTBALL_COMPETITIONS, ODDS_SPORTS,
+        API_KEYS, ENDPOINTS, FOOTBALL_COMPETITIONS, ODDS_SPORTS, API_FOOTBALL_LEAGUES,
         POISSON_PARAMS, ELO_PARAMS, VALUE_BETTING, NETWORK, DEMO_MODE
     )
 except ImportError:
@@ -80,6 +80,8 @@ except ImportError:
                    "soccer_italy_serie_a", "soccer_uefa_champs_league",
                    "basketball_nba", "basketball_euroleague",
                    "tennis_atp_french_open"]
+    API_FOOTBALL_LEAGUES = {61: "Ligue 1", 39: "Premier League", 78: "Bundesliga",
+                            140: "La Liga", 135: "Serie A", 2: "Ligue des Champions"}
     DEMO_MODE       = True
 
 # Configuration du logger
@@ -375,6 +377,126 @@ class DataFetcher:
             "date":       self.today,
             "noisy_odd":  noisy_odd,  # Fonction utilitaire
         }
+
+
+    # ── API-Football (RapidAPI) — enrichissement football prioritaire ──
+
+    def fetch_api_football_fixtures(self, league_id: int) -> List[dict]:
+        """
+        R\u00e9cup\u00e8re les matchs du jour via API-Football (RapidAPI).
+        Retourne la liste des fixtures au format standard.
+        """
+        key = API_KEYS.get("api_football", "")
+        if not key or key == "demo":
+            return []
+
+        url = f"{ENDPOINTS['api_football_base']}/fixtures"
+        headers = {
+            "X-RapidAPI-Key": key,
+            "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com",
+        }
+        params = {"league": league_id, "season": datetime.now().year, "date": self.today}
+
+        data = self._get(url, headers=headers, params=params)
+        if not data or "response" not in data:
+            return []
+
+        fixtures = []
+        for match in data["response"]:
+            home_team = match.get("teams", {}).get("home", {}).get("name", "?")
+            away_team = match.get("teams", {}).get("away", {}).get("name", "?")
+            fixture_id = match.get("fixture", {}).get("id", f"{home_team}_{away_team}")
+
+            fixtures.append({
+                "id": fixture_id,
+                "home": home_team,
+                "away": away_team,
+                "competition": API_FOOTBALL_LEAGUES.get(league_id, str(league_id)),
+                "date": self.today,
+            })
+
+        return fixtures
+
+    def fetch_api_football_team_stats(self, league_id: int) -> Dict[str, dict]:
+        """
+        R\u00e9cup\u00e8re les classements via API-Football pour enrichir le mod\u00e8le Poisson.
+        Retourne un dict {team_name: {goals_avg, conceded_avg, matches}}.
+        """
+        key = API_KEYS.get("api_football", "")
+        if not key or key == "demo":
+            return {}
+
+        url = f"{ENDPOINTS['api_football_base']}/standings"
+        headers = {
+            "X-RapidAPI-Key": key,
+            "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com",
+        }
+        params = {"league": league_id, "season": datetime.now().year}
+
+        data = self._get(url, headers=headers, params=params)
+        if not data or "response" not in data:
+            return {}
+
+        stats = {}
+        try:
+            standings = data["response"][0]["league"]["standings"][0]
+            for team_entry in standings:
+                team_name = team_entry["team"]["name"]
+                played = team_entry["all"]["played"]
+                if played >= POISSON_PARAMS["min_matches"]:
+                    stats[team_name] = {
+                        "goals_avg": team_entry["all"]["goals"]["for"] / played,
+                        "conceded_avg": team_entry["all"]["goals"]["against"] / played,
+                        "matches": played,
+                    }
+        except (KeyError, IndexError, ZeroDivisionError) as e:
+            logger.warning(f"Erreur parsing standings API-Football league {league_id}: {e}")
+
+        return stats
+
+    # ── BallDontLie API — enrichissement basketball NBA ────────────
+
+    def fetch_balldontlie_team_stats(self) -> Dict[str, dict]:
+        """
+        R\u00e9cup\u00e8re les stats d'\u00e9quipes NBA via BallDontLie (gratuit, sans cl\u00e9).
+        Retourne un dict {team_full_name: {wins, losses, win_pct, elo_approx}}.
+        """
+        url = f"{ENDPOINTS.get('balldontlie_base', 'https://api.balldontlie.io/v1')}/teams"
+        data = self._get(url)
+        if not data or "data" not in data:
+            return {}
+
+        # R\u00e9cup\u00e9rer les standings NBA courants
+        standings_url = f"{ENDPOINTS.get('balldontlie_base', 'https://api.balldontlie.io/v1')}/standings"
+        params = {"season": datetime.now().year if datetime.now().month >= 10 else datetime.now().year - 1}
+        standings_data = self._get(standings_url, params=params)
+
+        if not standings_data or "data" not in standings_data:
+            # Fallback: utiliser uniquement les noms d'\u00e9quipe sans stats
+            return {}
+
+        stats = {}
+        for team in standings_data["data"]:
+            try:
+                name = team.get("team", {}).get("full_name", "")
+                wins = team.get("wins", 0)
+                losses = team.get("losses", 0)
+                total = wins + losses
+                if total > 0:
+                    win_pct = wins / total
+                    # Approximation ELO bas\u00e9e sur le win%
+                    # 50% win = 1500, chaque 10% = +/- 150 ELO
+                    elo_approx = round(1500 + (win_pct - 0.5) * 1500, 0)
+                    stats[name] = {
+                        "wins": wins,
+                        "losses": losses,
+                        "win_pct": round(win_pct, 3),
+                        "elo_approx": elo_approx,
+                    }
+            except (KeyError, ZeroDivisionError):
+                continue
+
+        return stats
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1165,6 +1287,7 @@ def run_pipeline() -> Tuple[List[dict], str]:
         # \u2500\u2500 SOURCE PRIMAIRE : The Odds API pour TOUS les sports \u2500\u2500
         COMPETITION_NAMES = {
             "soccer_france_ligue_one": "Ligue 1",
+            "soccer_epl": "Premier League",
             "soccer_england_league1": "Premier League",
             "soccer_germany_bundesliga": "Bundesliga",
             "soccer_spain_la_liga": "La Liga",
@@ -1175,6 +1298,7 @@ def run_pipeline() -> Tuple[List[dict], str]:
             "tennis_atp_french_open": "Roland-Garros ATP",
             "tennis_atp_us_open": "US Open ATP",
             "tennis_atp_wimbledon": "Wimbledon ATP",
+            "tennis_atp_australian_open": "Open d'Australie ATP",
         }
 
         logger.info("  \u21b3 R\u00e9cup\u00e9ration via The Odds API pour tous les sports\u2026")
@@ -1210,19 +1334,15 @@ def run_pipeline() -> Tuple[List[dict], str]:
             if odds_events:
                 logger.info(f"  \u21b3 {len(odds_events)} \u00e9v\u00e9nements {comp_name} via Odds API")
 
-        # \u2500\u2500 ENRICHISSEMENT OPTIONNEL : football-data.org \u2500\u2500
+        # \u2500\u2500 ENRICHISSEMENT PRIORITAIRE : API-Football (RapidAPI) \u2500\u2500
         if data["football"]:
+            logger.info("  \u21b3 Enrichissement football via API-Football (RapidAPI)\u2026")
             try:
                 team_stats: Dict[str, dict] = {}
-                for code in FOOTBALL_COMPETITIONS:
-                    standings = fetcher.fetch_football_standings(code)
-                    for entry in standings:
-                        if entry["played"] >= POISSON_PARAMS["min_matches"]:
-                            team_stats[entry["team"]] = {
-                                "goals_avg": entry["goals_for"] / entry["played"],
-                                "conceded_avg": entry["goals_against"] / entry["played"],
-                                "matches": entry["played"],
-                            }
+                for league_id in API_FOOTBALL_LEAGUES:
+                    league_stats = fetcher.fetch_api_football_team_stats(league_id)
+                    team_stats.update(league_stats)
+
                 enriched_count = 0
                 for fix in data["football"]:
                     home_s = team_stats.get(fix["home"])
@@ -1235,10 +1355,55 @@ def run_pipeline() -> Tuple[List[dict], str]:
                         fix["home_matches"] = home_s["matches"]
                         fix["away_matches"] = away_s["matches"]
                         enriched_count += 1
+
                 if enriched_count:
-                    logger.info(f"  \u21b3 {enriched_count}/{len(data['football'])} matchs enrichis via football-data.org")
+                    logger.info(f"  \u21b3 {enriched_count}/{len(data['football'])} matchs enrichis via API-Football")
+                else:
+                    # Fallback : football-data.org
+                    logger.info("  \u21b3 API-Football sans r\u00e9sultat, tentative football-data.org\u2026")
+                    for code in FOOTBALL_COMPETITIONS:
+                        standings = fetcher.fetch_football_standings(code)
+                        for entry in standings:
+                            if entry["played"] >= POISSON_PARAMS["min_matches"]:
+                                team_stats[entry["team"]] = {
+                                    "goals_avg": entry["goals_for"] / entry["played"],
+                                    "conceded_avg": entry["goals_against"] / entry["played"],
+                                    "matches": entry["played"],
+                                }
+                    for fix in data["football"]:
+                        home_s = team_stats.get(fix["home"])
+                        away_s = team_stats.get(fix["away"])
+                        if home_s and away_s:
+                            fix["home_goals_avg"] = home_s["goals_avg"]
+                            fix["away_goals_avg"] = away_s["goals_avg"]
+                            fix["home_conceded_avg"] = home_s["conceded_avg"]
+                            fix["away_conceded_avg"] = away_s["conceded_avg"]
+                            fix["home_matches"] = home_s["matches"]
+                            fix["away_matches"] = away_s["matches"]
+                            enriched_count += 1
+                    if enriched_count:
+                        logger.info(f"  \u21b3 {enriched_count}/{len(data['football'])} matchs enrichis via football-data.org")
             except Exception as e:
-                logger.warning(f"  \u21b3 Enrichissement football-data.org \u00e9chou\u00e9 : {e} \u2014 stats par d\u00e9faut utilis\u00e9es")
+                logger.warning(f"  \u21b3 Enrichissement football \u00e9chou\u00e9 : {e} \u2014 stats par d\u00e9faut utilis\u00e9es")
+
+        # \u2500\u2500 ENRICHISSEMENT BASKETBALL : BallDontLie (NBA) \u2500\u2500
+        if data["basketball"]:
+            logger.info("  \u21b3 Enrichissement basketball via BallDontLie\u2026")
+            try:
+                nba_stats = fetcher.fetch_balldontlie_team_stats()
+                enriched_bball = 0
+                for fix in data["basketball"]:
+                    home_s = nba_stats.get(fix["home"])
+                    away_s = nba_stats.get(fix["away"])
+                    if home_s:
+                        fix["home_elo"] = home_s["elo_approx"]
+                        enriched_bball += 1
+                    if away_s:
+                        fix["away_elo"] = away_s["elo_approx"]
+                if enriched_bball:
+                    logger.info(f"  \u21b3 {enriched_bball} \u00e9quipes NBA enrichies avec ELO r\u00e9el via BallDontLie")
+            except Exception as e:
+                logger.warning(f"  \u21b3 Enrichissement BallDontLie \u00e9chou\u00e9 : {e} \u2014 ELO par d\u00e9faut utilis\u00e9")
 
         total_events = len(data["football"]) + len(data["basketball"]) + len(data["tennis"])
         logger.info(f"  \u21b3 Total : {total_events} \u00e9v\u00e9nements ({len(data['football'])} football, {len(data['basketball'])} basketball, {len(data['tennis'])} tennis)")
