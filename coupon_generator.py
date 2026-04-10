@@ -99,8 +99,7 @@ class DataFetcher:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "CouponGenerator/1.0"})
-        self.tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        self.today    = datetime.now().strftime("%Y-%m-%d")
+        self.today    = datetime.now().strftime("%Y-%m-%d")  # Matchs DU JOUR
 
     def _get(self, url: str, headers: dict = None, params: dict = None) -> Optional[dict]:
         """Effectue un appel GET avec gestion d'erreurs et timeout."""
@@ -143,7 +142,7 @@ class DataFetcher:
 
         url = f"{ENDPOINTS['football_data_base']}/competitions/{competition_code}/matches"
         headers = {"X-Auth-Token": API_KEYS["football_data"]}
-        params  = {"dateFrom": self.tomorrow, "dateTo": self.tomorrow}
+        params  = {"dateFrom": self.today, "dateTo": self.today}
 
         data = self._get(url, headers=headers, params=params)
         if not data:
@@ -213,7 +212,7 @@ class DataFetcher:
 
         odds_list = []
         for game in data:
-            if game.get("commence_time", "")[:10] != self.tomorrow:
+            if game.get("commence_time", "")[:10] != self.today:
                 continue
             entry = {
                 "id":    game.get("id"),
@@ -249,7 +248,7 @@ class DataFetcher:
 
         events = []
         for event in (data.get("events") or []):
-            if event.get("dateEvent") == self.tomorrow:
+            if event.get("dateEvent") == self.today:
                 events.append({
                     "sport":       event.get("strSport"),
                     "competition": event.get("strLeague"),
@@ -368,7 +367,7 @@ class DataFetcher:
             "football":   football_fixtures,
             "basketball": basketball_fixtures,
             "tennis":     tennis_fixtures,
-            "date":       self.tomorrow,
+            "date":       self.today,
             "noisy_odd":  noisy_odd,  # Fonction utilitaire
         }
 
@@ -1152,11 +1151,10 @@ def run_pipeline() -> Tuple[List[dict], str]:
         data = fetcher.get_demo_data()
     else:
         logger.info("  ↳ Appel aux APIs en temps réel…")
-        data = fetcher.get_demo_data()  # Fallback si APIs non configurées
-
         # Récupération des données réelles : matchs + classements
         real_fixtures = []
         team_stats: Dict[str, dict] = {}
+        data = {"football": [], "basketball": [], "tennis": [], "date": fetcher.today}
 
         for code in FOOTBALL_COMPETITIONS:
             fixtures = fetcher.fetch_football_fixtures(code)
@@ -1193,7 +1191,27 @@ def run_pipeline() -> Tuple[List[dict], str]:
         elif real_fixtures:
             logger.info(f"  ↳ {len(real_fixtures)} matchs récupérés mais stats manquantes — fallback démo")
         else:
-            logger.info("  ↳ Aucun match réel trouvé — fallback données démo")
+            logger.info("  ↳ Aucun match football réel trouvé aujourd'hui")
+
+        # ── Basketball réel : NBA + EuroLeague via Odds API ──────────
+        logger.info("  ↳ Récupération des matchs basketball du jour (NBA + EuroLeague)…")
+        bball_real = []
+        for sport_key in ["basketball_nba", "basketball_euroleague"]:
+            odds_events = fetcher.fetch_odds(sport_key)
+            for ev in odds_events:
+                bball_real.append({
+                    "sport":       sport_key,
+                    "competition": "NBA" if "nba" in sport_key else "EuroLeague",
+                    "home":        ev["home"],
+                    "away":        ev["away"],
+                    "date":        fetcher.today,
+                    "odds_h2h":    ev["markets"].get("h2h", {}),
+                })
+        if bball_real:
+            logger.info(f"  ↳ {len(bball_real)} matchs basketball trouvés via Odds API")
+            data["basketball"] = bball_real
+        else:
+            logger.info("  ↳ Aucun match basketball aujourd'hui")
 
     # ── 2. Modélisation football ──────────────────────────────────
     logger.info("📐 Étape 2/5 : Modélisation Poisson-Dixon-Coles (football)…")
@@ -1233,16 +1251,7 @@ def run_pipeline() -> Tuple[List[dict], str]:
         except Exception as e:
             logger.warning(f"  ↳ Erreur prédiction basket : {e}")
 
-    for fixture in data.get("tennis", []):
-        try:
-            pred = tennis_model.predict(fixture)
-            tennis_predictions.append(pred)
-            logger.info(
-                f"  ↳ [Tennis] {fixture['home']} vs {fixture['away']} | "
-                f"P(home) : {pred['p_home_win']*100:.0f}%"
-            )
-        except Exception as e:
-            logger.warning(f"  ↳ Erreur prédiction tennis : {e}")
+    # Tennis désactivé (pas de données fiables via APIs gratuites)
 
     # ── 4. Extraction des paris à valeur positive ─────────────────
     logger.info("💎 Étape 4/5 : Identification des value bets…")
