@@ -91,6 +91,11 @@ config.DEMO_MODE = DEMO_MODE
 # FORMATAGE DU COUPON EN MARKDOWN TELEGRAM
 # ══════════════════════════════════════════════════════════════════════
 
+def _esc(text: str) -> str:
+    """Échappe les caractères spéciaux MarkdownV2 Telegram."""
+    special = r"\_*[]()~`>#+-=|{}.!"
+    return "".join(f"\\{c}" if c in special else c for c in str(text))
+
 def format_coupon_telegram(coupon: list, date: str) -> str:
     """
     Formate le coupon en MarkdownV2 pour Telegram.
@@ -173,7 +178,7 @@ def generate_coupon_message() -> str:
         return format_coupon_telegram(coupon, date)
     except Exception as e:
         logger.error(f"Erreur lors de la génération : {e}", exc_info=True)
-        return f"❌ Erreur lors de la génération du coupon : {e}"
+        return "❌ Une erreur est survenue lors de la génération du coupon\\.\nVeuillez réessayer dans quelques instants\\."
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -186,7 +191,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     prenom = user.first_name if user else "là"
 
     msg = (
-        f"🎯 *Bienvenue sur APEX, {prenom}\\!*\n\n"
+        f"🎯 *Bienvenue sur APEX, {_esc(prenom)}\\!*\n\n"
         "Je suis un bot de prédiction sportive basé sur des modèles "
         "statistiques avancés \\(Poisson\\-Dixon\\-Coles \\+ ELO\\)\\.\n\n"
         "*Commandes disponibles :*\n"
@@ -194,7 +199,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "📊 /status — Statut et prochaine génération\n"
         "❓ /aide   — Aide complète\n\n"
         f"⏰ *Envoi automatique :* chaque jour à {BOT_SEND_HOUR:02d}:{BOT_SEND_MINUTE:02d} "
-        f"\\({TIMEZONE}\\)\n\n"
+        f"\\({_esc(TIMEZONE)}\\)\n\n"
         "⚠️ _Les paris comportent un risque de perte\\. Jouez responsablement\\._"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
