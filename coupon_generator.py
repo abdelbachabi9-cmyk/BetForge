@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-╔══════════════════════════════════════════════════════════════════╗
-║         GÉNÉRATEUR DE COUPON DE PARIS SPORTIFS QUOTIDIEN         ║
-║         Modèle : Poisson-Dixon-Coles + ELO + Value Betting       ║
-║         Version : 1.0 | Python 3.8+                              ║
-╚══════════════════════════════════════════════════════════════════╝
+ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+â         GÃNÃRATEUR DE COUPON DE PARIS SPORTIFS QUOTIDIEN         â
+â         ModÃ¨le : Poisson + correction scores faibles + ELO       â
+â         Version : 1.0 | Python 3.8+                              â
+ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-Ce script génère automatiquement un coupon de paris sportifs avec
-une cote globale cible de ~5, en utilisant des modèles statistiques
-sophistiqués et du value betting.
+Ce script gÃ©nÃ¨re automatiquement un coupon de paris sportifs avec
+une cote globale cible de ~5, en utilisant des modÃ¨les statistiques
+sophistiquÃ©s et du value betting.
 
 Utilisation :
     python coupon_generator.py
 
-Prérequis :
+PrÃ©requis :
     pip install requests numpy scipy pandas
 """
 
@@ -25,39 +25,39 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 
-# Imports avec gestion d'erreur si bibliothèques manquantes
+# Imports avec gestion d'erreur si bibliothÃ¨ques manquantes
 try:
     import numpy as np
 except ImportError:
-    print("❌ numpy manquant. Lancez : pip install numpy")
+    print("â numpy manquant. Lancez : pip install numpy")
     sys.exit(1)
 
 try:
     from scipy.stats import poisson
 except ImportError:
-    print("❌ scipy manquant. Lancez : pip install scipy")
+    print("â scipy manquant. Lancez : pip install scipy")
     sys.exit(1)
 
 try:
     import pandas as pd
 except ImportError:
-    print("❌ pandas manquant. Lancez : pip install pandas")
+    print("â pandas manquant. Lancez : pip install pandas")
     sys.exit(1)
 
 try:
     import requests
 except ImportError:
-    print("❌ requests manquant. Lancez : pip install requests")
+    print("â requests manquant. Lancez : pip install requests")
     sys.exit(1)
 
 # Import de la configuration locale
 try:
     from config import (
         API_KEYS, ENDPOINTS, FOOTBALL_COMPETITIONS, ODDS_SPORTS, API_FOOTBALL_LEAGUES,
-        POISSON_PARAMS, ELO_PARAMS, VALUE_BETTING, NETWORK, DEMO_MODE
+        POISSON_PARAMS, ELO_PARAMS, VALUE_BETTING, KELLY, NETWORK, DEMO_MODE
     )
 except ImportError:
-    # Valeurs par défaut si config.py est absent
+    # Valeurs par dÃ©faut si config.py est absent
     API_KEYS = {"football_data": "", "odds_api": ""}
     ENDPOINTS = {
         "football_data_base":   "https://api.football-data.org/v4",
@@ -74,6 +74,7 @@ except ImportError:
     VALUE_BETTING   = {"min_value": 0.05, "min_odd": 1.30, "max_odd": 4.00,
                        "target_selections": 6, "min_selections": 4, "max_selections": 10,
                        "target_total_odd": 5.0, "min_total_odd": 3.0, "max_total_odd": 15.0}
+    KELLY           = {"fraction": 0.25, "max_stake_pct": 5.0}
     NETWORK         = {"timeout": 10, "max_retries": 2}
     ODDS_SPORTS = ["soccer_france_ligue_one", "soccer_england_league1",
                    "soccer_germany_bundesliga", "soccer_spain_la_liga",
@@ -87,20 +88,20 @@ except ImportError:
 # Configuration du logger
 logging.basicConfig(
     level=logging.INFO,
-    format="%(levelname)s │ %(message)s"
+    format="%(levelname)s â %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
-# ══════════════════════════════════════════════════════════════════════
-# CLASSE 1 : DataFetcher — Récupération des données (API + fallback)
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# CLASSE 1 : DataFetcher â RÃ©cupÃ©ration des donnÃ©es (API + fallback)
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 class DataFetcher:
     """
-    Récupère les données sportives depuis les APIs gratuites disponibles.
-    En cas d'échec (clé invalide, timeout, erreur réseau), bascule
-    automatiquement sur des données simulées réalistes.
+    RÃ©cupÃ¨re les donnÃ©es sportives depuis les APIs gratuites disponibles.
+    En cas d'Ã©chec (clÃ© invalide, timeout, erreur rÃ©seau), bascule
+    automatiquement sur des donnÃ©es simulÃ©es rÃ©alistes.
     """
 
     def __init__(self):
@@ -121,7 +122,7 @@ class DataFetcher:
                 if resp.status_code == 200:
                     return resp.json()
                 elif resp.status_code == 429:
-                    logger.warning(f"Quota API dépassé ({url})")
+                    logger.warning(f"Quota API dÃ©passÃ© ({url})")
                     return None
                 else:
                     logger.warning(f"Erreur HTTP {resp.status_code} pour {url}")
@@ -136,15 +137,15 @@ class DataFetcher:
                 return None
         return None
 
-    # ── Football-data.org ───────────────────────────────────────────
+    # ââ Football-data.org âââââââââââââââââââââââââââââââââââââââââââ
 
     def fetch_football_fixtures(self, competition_code: str) -> List[dict]:
         """
-        Récupère les matchs de demain depuis football-data.org.
-        Retourne une liste de dicts normalisés.
+        RÃ©cupÃ¨re les matchs de demain depuis football-data.org.
+        Retourne une liste de dicts normalisÃ©s.
         """
         if DEMO_MODE or not API_KEYS["football_data"]:
-            logger.info(f"Mode démo actif — données simulées pour {competition_code}")
+            logger.info(f"Mode dÃ©mo actif â donnÃ©es simulÃ©es pour {competition_code}")
             return []
 
         url = f"{ENDPOINTS['football_data_base']}/competitions/{competition_code}/matches"
@@ -169,8 +170,8 @@ class DataFetcher:
 
     def fetch_football_standings(self, competition_code: str) -> List[dict]:
         """
-        Récupère le classement d'une compétition pour calculer
-        les forces d'attaque/défense.
+        RÃ©cupÃ¨re le classement d'une compÃ©tition pour calculer
+        les forces d'attaque/dÃ©fense.
         """
         if DEMO_MODE or not API_KEYS["football_data"]:
             return []
@@ -194,12 +195,12 @@ class DataFetcher:
                     })
         return standings
 
-    # ── The-Odds-API ────────────────────────────────────────────────
+    # ââ The-Odds-API ââââââââââââââââââââââââââââââââââââââââââââââââ
 
     def fetch_odds(self, sport_key: str) -> List[dict]:
         """
-        Récupère les cotes en temps réel depuis the-odds-api.com.
-        Retourne les marchés 1X2 et Over/Under.
+        RÃ©cupÃ¨re les cotes en temps rÃ©el depuis the-odds-api.com.
+        Retourne les marchÃ©s 1X2 et Over/Under.
         """
         if DEMO_MODE or not API_KEYS["odds_api"]:
             return []
@@ -237,11 +238,11 @@ class DataFetcher:
 
         return odds_list
 
-    # ── TheSportsDB (multi-sports) ───────────────────────────────────
+    # ââ TheSportsDB (multi-sports) âââââââââââââââââââââââââââââââââââ
 
     def fetch_thesportsdb_events(self, league_id: str) -> List[dict]:
         """
-        Récupère les événements à venir depuis TheSportsDB (API publique).
+        RÃ©cupÃ¨re les Ã©vÃ©nements Ã  venir depuis TheSportsDB (API publique).
         """
         if DEMO_MODE:
             return []
@@ -265,20 +266,20 @@ class DataFetcher:
                 })
         return events
 
-    # ── Données simulées réalistes (mode démo / fallback) ─────────────
+    # ââ DonnÃ©es simulÃ©es rÃ©alistes (mode dÃ©mo / fallback) âââââââââââââ
 
     def get_demo_data(self) -> Dict:
         """
-        Génère un jeu de données réalistes simulant des matchs de demain,
-        avec statistiques d'équipes et cotes bookmaker plausibles.
-        Utilisé quand les APIs ne répondent pas ou en mode démo.
+        GÃ©nÃ¨re un jeu de donnÃ©es rÃ©alistes simulant des matchs de demain,
+        avec statistiques d'Ã©quipes et cotes bookmaker plausibles.
+        UtilisÃ© quand les APIs ne rÃ©pondent pas ou en mode dÃ©mo.
         """
-        # Seed aléatoire basée sur la date pour des résultats reproductibles
+        # Seed alÃ©atoire basÃ©e sur la date pour des rÃ©sultats reproductibles
         seed = int(datetime.now().strftime("%Y%m%d"))
         rng  = random.Random(seed)
         np.random.seed(seed % (2**31))
 
-        # ── Matchs de football simulés ───────────────────────────────
+        # ââ Matchs de football simulÃ©s âââââââââââââââââââââââââââââââ
         football_fixtures = [
             {
                 "id": 1001, "sport": "Football", "competition": "Premier League",
@@ -331,7 +332,7 @@ class DataFetcher:
             },
         ]
 
-        # ── Matchs de basketball simulés ────────────────────────────
+        # ââ Matchs de basketball simulÃ©s ââââââââââââââââââââââââââââ
         basketball_fixtures = [
             {
                 "id": 2001, "sport": "Basketball", "competition": "NBA",
@@ -349,7 +350,7 @@ class DataFetcher:
             },
         ]
 
-        # ── Matchs de tennis simulés ─────────────────────────────────
+        # ââ Matchs de tennis simulÃ©s âââââââââââââââââââââââââââââââââ
         tennis_fixtures = [
             {
                 "id": 3001, "sport": "Tennis", "competition": "ATP Masters",
@@ -361,13 +362,13 @@ class DataFetcher:
             },
         ]
 
-        # ── Cotes bookmaker simulées réalistes ───────────────────────
-        # Légèrement défavorables (marge bookmaker ~5%)
+        # ââ Cotes bookmaker simulÃ©es rÃ©alistes âââââââââââââââââââââââ
+        # LÃ©gÃ¨rement dÃ©favorables (marge bookmaker ~5%)
         def noisy_odd(p: float, margin: float = 0.05) -> float:
-            """Simule la cote bookmaker à partir d'une proba réelle."""
+            """Simule la cote bookmaker Ã  partir d'une proba rÃ©elle."""
             implied = p * (1 - margin)
             raw = 1 / implied if implied > 0 else 99.0
-            noise = rng.uniform(0.95, 1.05)
+            noise = rng.uniform(0.98, 1.02)
             return round(max(1.10, raw * noise), 2)
 
         return {
@@ -379,7 +380,7 @@ class DataFetcher:
         }
 
 
-    # ── API-Football (RapidAPI) — enrichissement football prioritaire ──
+    # ââ API-Football (RapidAPI) â enrichissement football prioritaire ââ
 
     def fetch_api_football_fixtures(self, league_id: int) -> List[dict]:
         """
@@ -454,7 +455,7 @@ class DataFetcher:
 
         return stats
 
-    # ── BallDontLie API — enrichissement basketball NBA ────────────
+    # ââ BallDontLie API â enrichissement basketball NBA ââââââââââââ
 
     def fetch_balldontlie_team_stats(self) -> Dict[str, dict]:
         """
@@ -499,30 +500,31 @@ class DataFetcher:
         return stats
 
 
-# ══════════════════════════════════════════════════════════════════════
-# CLASSE 2 : PoissonModel — Modèle football (Poisson/Dixon-Coles)
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# CLASSE 2 : PoissonModel â ModÃ¨le football (Poisson + correction scores faibles)
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 class PoissonModel:
     """
-    Modèle statistique de prédiction football basé sur la distribution
-    de Poisson et l'approche Dixon-Coles (correction des faibles scores).
+    ModÃ¨le statistique de prÃ©diction football basÃ© sur la distribution
+    de Poisson (correction scores faibles).
 
     Calcule :
-    - P(victoire domicile) | P(nul) | P(victoire extérieur)
+    - P(victoire domicile) | P(nul) | P(victoire extÃ©rieur)
     - P(Over 2.5 buts)
-    - P(BTTS — les deux équipes marquent)
+    - P(BTTS â les deux Ã©quipes marquent)
     - P(1 ou 0 but dans le match)
     """
 
-    def __init__(self):
-        self.league_avg_goals = 2.65  # Moyenne historique tous championnats confondus
+    def __init__(self, league_avg_goals: float = None):
+        self.league_avg_goals = league_avg_goals or POISSON_PARAMS.get("default_league_avg_goals", 2.65)
         self.home_adv          = POISSON_PARAMS["home_advantage"]
         self.max_goals         = POISSON_PARAMS["max_goals"]
         self.goals_thresh      = POISSON_PARAMS["goals_threshold"]
+        self.rho               = POISSON_PARAMS.get("low_score_rho", -0.13)
 
-        # Matrice de correction Dixon-Coles pour les scores 0-0, 1-0, 0-1, 1-1
-        # (réduit la sous-estimation de ces scores par Poisson classique)
+        # Matrice de correction rho (scores faibles)
+        # (rÃ©duit la sous-estimation de ces scores par Poisson classique)
         self.tau_correction = {
             (0, 0): 0.05,
             (0, 1): -0.05,
@@ -532,18 +534,18 @@ class PoissonModel:
 
     def calculate_lambdas(self, fixture: dict) -> Tuple[float, float]:
         """
-        Calcule les paramètres lambda (buts attendus) pour chaque équipe.
+        Calcule les paramÃ¨tres lambda (buts attendus) pour chaque Ã©quipe.
 
         Formule :
-            lambda_home = att_home × def_away × avg_goals × home_adv
-            lambda_away = att_away × def_home × avg_goals
+            lambda_home = att_home Ã def_away Ã avg_goals Ã home_adv
+            lambda_away = att_away Ã def_home Ã avg_goals
         """
-        # Force d'attaque = moyenne de buts marqués / moyenne de la ligue
+        # Force d'attaque = moyenne de buts marquÃ©s / moyenne de la ligue
         att_home = fixture["home_goals_avg"] / self.league_avg_goals
         att_away = fixture["away_goals_avg"] / self.league_avg_goals
 
-        # Force de défense = moyenne de buts encaissés / moyenne de la ligue
-        # Plus c'est faible, mieux c'est en défense
+        # Force de dÃ©fense = moyenne de buts encaissÃ©s / moyenne de la ligue
+        # Plus c'est faible, mieux c'est en dÃ©fense
         def_home = fixture["home_conceded_avg"] / self.league_avg_goals
         def_away = fixture["away_conceded_avg"] / self.league_avg_goals
 
@@ -553,13 +555,13 @@ class PoissonModel:
 
         return round(lambda_home, 4), round(lambda_away, 4)
 
-    def _dixon_coles_tau(self, goals_h: int, goals_a: int,
-                          lambda_h: float, lambda_a: float,
-                          rho: float = -0.13) -> float:
+    def _low_score_tau(self, goals_h: int, goals_a: int,
+                       lambda_h: float, lambda_a: float) -> float:
         """
-        Correction Dixon-Coles (rho) pour les scores faibles.
-        rho=-0.13 est une valeur empiriquement calibrée.
+        Correction rho pour les scores faibles.
+        Utilise self.rho configurÃ© Ã  partir de POISSON_PARAMS.
         """
+        rho = self.rho
         if goals_h == 0 and goals_a == 0:
             return 1 - lambda_h * lambda_a * rho
         elif goals_h == 0 and goals_a == 1:
@@ -573,8 +575,8 @@ class PoissonModel:
 
     def score_matrix(self, lambda_home: float, lambda_away: float) -> np.ndarray:
         """
-        Construit la matrice de probabilités de scores.
-        score_matrix[i][j] = P(domicile marque i buts, extérieur marque j buts)
+        Construit la matrice de probabilitÃ©s de scores.
+        score_matrix[i][j] = P(domicile marque i buts, extÃ©rieur marque j buts)
         """
         max_g = self.max_goals
         matrix = np.zeros((max_g + 1, max_g + 1))
@@ -583,8 +585,8 @@ class PoissonModel:
             for j in range(max_g + 1):
                 p = (poisson.pmf(i, lambda_home) *
                      poisson.pmf(j, lambda_away))
-                # Correction Dixon-Coles pour les petits scores
-                tau = self._dixon_coles_tau(i, j, lambda_home, lambda_away)
+                # Correction rho pour les petits scores
+                tau = self._low_score_tau(i, j, lambda_home, lambda_away)
                 matrix[i][j] = p * tau
 
         # Normalisation pour que la somme = 1
@@ -596,18 +598,18 @@ class PoissonModel:
 
     def predict(self, fixture: dict) -> Dict[str, Any]:
         """
-        Prédit toutes les probabilités pour un match de football.
-        Retourne un dict avec les probabilités et les lambdas.
+        PrÃ©dit toutes les probabilitÃ©s pour un match de football.
+        Retourne un dict avec les probabilitÃ©s et les lambdas.
         """
         lambda_h, lambda_a = self.calculate_lambdas(fixture)
         matrix = self.score_matrix(lambda_h, lambda_a)
 
-        # ── Probabilités 1X2 ──────────────────────────────────────
-        p_home = float(np.sum(np.tril(matrix, -1)))   # domicile > extérieur
-        p_draw = float(np.sum(np.diag(matrix)))       # égalité
-        p_away = float(np.sum(np.triu(matrix, 1)))    # extérieur > domicile
+        # ââ ProbabilitÃ©s 1X2 ââââââââââââââââââââââââââââââââââââââ
+        p_home = float(np.sum(np.tril(matrix, -1)))   # domicile > extÃ©rieur
+        p_draw = float(np.sum(np.diag(matrix)))       # Ã©galitÃ©
+        p_away = float(np.sum(np.triu(matrix, 1)))    # extÃ©rieur > domicile
 
-        # ── Over/Under 2.5 buts ───────────────────────────────────
+        # ââ Over/Under 2.5 buts âââââââââââââââââââââââââââââââââââ
         threshold = int(self.goals_thresh)  # 2
         p_over = 0.0
         p_under = 0.0
@@ -619,14 +621,14 @@ class PoissonModel:
                 else:
                     p_under += matrix[i][j]
 
-        # ── BTTS (Both Teams To Score) ────────────────────────────
+        # ââ BTTS (Both Teams To Score) ââââââââââââââââââââââââââââ
         # P(home > 0 ET away > 0) = 1 - P(home=0) - P(away=0) + P(home=0 ET away=0)
         p_btts = float(1
                        - np.sum(matrix[0, :])     # P(home ne marque pas)
                        - np.sum(matrix[:, 0])     # P(away ne marque pas)
-                       + matrix[0, 0])            # P(aucun but, ajouté car soustrait 2x)
+                       + matrix[0, 0])            # P(aucun but, ajoutÃ© car soustrait 2x)
 
-        # ── Score le plus probable ────────────────────────────────
+        # ââ Score le plus probable ââââââââââââââââââââââââââââââââ
         max_idx = np.unravel_index(np.argmax(matrix), matrix.shape)
         most_likely_score = f"{max_idx[0]}-{max_idx[1]}"
 
@@ -647,17 +649,17 @@ class PoissonModel:
         }
 
 
-# ══════════════════════════════════════════════════════════════════════
-# CLASSE 3 : EloModel — Modèle basketball (ELO adapté)
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# CLASSE 3 : EloModel â ModÃ¨le basketball (ELO adaptÃ©)
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 class EloModel:
     """
-    Modèle ELO adapté pour la prédiction basketball.
+    ModÃ¨le ELO adaptÃ© pour la prÃ©diction basketball.
 
-    Le rating ELO mesure la force relative de chaque équipe.
-    Après chaque match, les ratings sont mis à jour selon le résultat.
-    Un bonus domicile est appliqué à l'équipe qui reçoit.
+    Le rating ELO mesure la force relative de chaque Ã©quipe.
+    AprÃ¨s chaque match, les ratings sont mis Ã  jour selon le rÃ©sultat.
+    Un bonus domicile est appliquÃ© Ã  l'Ã©quipe qui reÃ§oit.
     """
 
     def __init__(self):
@@ -667,32 +669,32 @@ class EloModel:
         self.home_bonus = ELO_PARAMS["home_bonus"]
 
     def get_rating(self, team: str) -> float:
-        """Retourne le rating ELO d'une équipe (initial si inconnue)."""
+        """Retourne le rating ELO d'une Ã©quipe (initial si inconnue)."""
         return self.ratings.get(team, self.initial)
 
     def update(self, home: str, away: str, home_won: bool) -> None:
         """
-        Met à jour les ratings ELO après un match.
-        S : 1 si victoire, 0 si défaite.
+        Met Ã  jour les ratings ELO aprÃ¨s un match.
+        S : 1 si victoire, 0 si dÃ©faite.
         """
         r_home = self.get_rating(home) + self.home_bonus
         r_away = self.get_rating(away)
 
-        # Probabilité attendue de victoire domicile
+        # ProbabilitÃ© attendue de victoire domicile
         e_home = 1 / (1 + 10 ** ((r_away - r_home) / 400))
         e_away = 1 - e_home
 
-        # Résultat réel
+        # RÃ©sultat rÃ©el
         s_home = 1.0 if home_won else 0.0
         s_away = 1.0 - s_home
 
-        # Mise à jour
+        # Mise Ã  jour
         self.ratings[home] = self.get_rating(home) + self.k * (s_home - e_home)
         self.ratings[away] = self.get_rating(away) + self.k * (s_away - e_away)
 
     def expected_win_prob(self, home: str, away: str) -> Tuple[float, float]:
         """
-        Calcule les probabilités de victoire selon les ratings ELO.
+        Calcule les probabilitÃ©s de victoire selon les ratings ELO.
         Retourne (p_home, p_away).
         """
         r_home = self.get_rating(home) + self.home_bonus
@@ -705,9 +707,9 @@ class EloModel:
 
     def form_adjustment(self, form_list: List[int]) -> float:
         """
-        Calcule un score de forme récente pondéré.
-        form_list = liste de résultats [1/0] du plus récent au plus ancien.
-        Poids décroissants : match le plus récent pèse le plus lourd.
+        Calcule un score de forme rÃ©cente pondÃ©rÃ©.
+        form_list = liste de rÃ©sultats [1/0] du plus rÃ©cent au plus ancien.
+        Poids dÃ©croissants : match le plus rÃ©cent pÃ¨se le plus lourd.
         """
         weights = [0.35, 0.25, 0.20, 0.12, 0.08]
         score = 0.0
@@ -717,24 +719,24 @@ class EloModel:
 
     def predict(self, fixture: dict) -> Dict[str, Any]:
         """
-        Prédit le résultat d'un match de basketball avec ELO + forme.
+        PrÃ©dit le rÃ©sultat d'un match de basketball avec ELO + forme.
         """
         home, away = fixture["home"], fixture["away"]
 
-        # Initialisation des ratings à partir des données disponibles
+        # Initialisation des ratings Ã  partir des donnÃ©es disponibles
         if "home_elo" in fixture:
             self.ratings[home] = fixture["home_elo"]
         if "away_elo" in fixture:
             self.ratings[away] = fixture["away_elo"]
 
-        # Probabilités ELO de base
+        # ProbabilitÃ©s ELO de base
         p_home, p_away = self.expected_win_prob(home, away)
 
-        # Ajustement forme récente
+        # Ajustement forme rÃ©cente
         form_home = self.form_adjustment(fixture.get("home_form", []))
         form_away = self.form_adjustment(fixture.get("away_form", []))
 
-        # Ajustement: si forme nettement supérieure, légère correction
+        # Ajustement: si forme nettement supÃ©rieure, lÃ©gÃ¨re correction
         form_diff = (form_home - form_away) * 0.10
         p_home_adj = min(0.95, max(0.05, p_home + form_diff))
         p_away_adj = 1 - p_home_adj
@@ -751,20 +753,20 @@ class EloModel:
         }
 
 
-# ══════════════════════════════════════════════════════════════════════
-# CLASSE 4 : TennisModel — Modèle tennis (ELO-like + surface + forme)
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# CLASSE 4 : TennisModel â ModÃ¨le tennis (ELO-like + surface + forme)
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 class TennisModel:
     """
-    Modèle de prédiction tennis combinant :
+    ModÃ¨le de prÃ©diction tennis combinant :
     - Classement ATP/WTA (approximation ELO via ranking)
-    - Performance sur la surface spécifique
-    - Forme récente (derniers 10 matchs)
+    - Performance sur la surface spÃ©cifique
+    - Forme rÃ©cente (derniers 10 matchs)
     """
 
-    # Conversion ranking → rating ELO approximatif
-    # (basé sur la distribution empirique des rankings ATP)
+    # Conversion ranking â rating ELO approximatif
+    # (basÃ© sur la distribution empirique des rankings ATP)
     RANKING_TO_ELO = {
         1: 2200, 2: 2150, 3: 2100, 5: 2050, 10: 2000,
         20: 1950, 30: 1900, 50: 1850, 75: 1800, 100: 1750,
@@ -775,7 +777,7 @@ class TennisModel:
         """Convertit un classement ATP/WTA en rating ELO approximatif."""
         if ranking <= 0:
             return 1500
-        # Interpolation linéaire entre les points de référence
+        # Interpolation linÃ©aire entre les points de rÃ©fÃ©rence
         keys = sorted(self.RANKING_TO_ELO.keys())
         for i in range(len(keys) - 1):
             if keys[i] <= ranking <= keys[i + 1]:
@@ -787,16 +789,16 @@ class TennisModel:
 
     def surface_adjustment(self, win_rate: float, surface: str) -> float:
         """
-        Ajuste la probabilité selon le taux de victoire sur la surface.
+        Ajuste la probabilitÃ© selon le taux de victoire sur la surface.
         win_rate : taux historique de victoire sur cette surface [0,1]
         """
-        # Score normalisé : 0.5 = neutre, >0.5 = fort sur la surface
+        # Score normalisÃ© : 0.5 = neutre, >0.5 = fort sur la surface
         return round((win_rate - 0.5) * 0.15, 4)
 
     def form_score(self, form_list: List[int]) -> float:
         """
         Calcule le score de forme sur les 10 derniers matchs.
-        Les matchs récents ont plus de poids.
+        Les matchs rÃ©cents ont plus de poids.
         """
         weights = [0.20, 0.18, 0.15, 0.12, 0.10, 0.09, 0.07, 0.05, 0.03, 0.01]
         score = 0.0
@@ -806,16 +808,16 @@ class TennisModel:
 
     def predict(self, fixture: dict) -> Dict[str, Any]:
         """
-        Prédit le résultat d'un match de tennis.
+        PrÃ©dit le rÃ©sultat d'un match de tennis.
         """
         home, away = fixture["home"], fixture["away"]
         surface    = fixture.get("surface", "clay")
 
-        # Rating ELO approximatif basé sur le classement
+        # Rating ELO approximatif basÃ© sur le classement
         elo_home = self.ranking_to_elo(fixture.get("home_ranking", 100))
         elo_away = self.ranking_to_elo(fixture.get("away_ranking", 100))
 
-        # Probabilité ELO de base
+        # ProbabilitÃ© ELO de base
         p_home_base = 1 / (1 + 10 ** ((elo_away - elo_home) / 400))
 
         # Ajustement surface
@@ -846,58 +848,58 @@ class TennisModel:
         }
 
 
-# ══════════════════════════════════════════════════════════════════════
-# CLASSE 5 : ValueBetSelector — Calcul de valeur et sélection des paris
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# CLASSE 5 : ValueBetSelector â Calcul de valeur et sÃ©lection des paris
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 class ValueBetSelector:
     """
-    Identifie les paris à valeur positive (value bets).
+    Identifie les paris Ã  valeur positive (value bets).
 
     Principe du value betting :
-        Si la probabilité modélisée > probabilité implicite du bookmaker,
-        alors le pari est mathématiquement favorable à long terme.
+        Si la probabilitÃ© modÃ©lisÃ©e > probabilitÃ© implicite du bookmaker,
+        alors le pari est mathÃ©matiquement favorable Ã  long terme.
 
-    Formule value : value = (p_model × cote_book) - 1
+    Formule value : value = (p_model Ã cote_book) - 1
     """
 
     def __init__(self):
         self.min_value    = VALUE_BETTING["min_value"]
         self.min_odd      = VALUE_BETTING["min_odd"]
         self.max_odd      = VALUE_BETTING["max_odd"]
-        self.noisy_odd_fn = None  # Sera assigné par DataFetcher en mode démo
+        self.noisy_odd_fn = None  # Sera assignÃ© par DataFetcher en mode dÃ©mo
 
     def calculate_value(self, p_model: float, odd_book: float) -> float:
         """
-        Calcule la valeur espérée d'un pari.
-        value > 0 : pari mathématiquement favorable.
-        value > 0.05 : edge significatif (critère de sélection).
+        Calcule la valeur espÃ©rÃ©e d'un pari.
+        value > 0 : pari mathÃ©matiquement favorable.
+        value > 0.05 : edge significatif (critÃ¨re de sÃ©lection).
         """
         return round((p_model * odd_book) - 1, 4)
 
     def simulate_bookmaker_odd(self, p_model: float,
                                 market_margin: float = 0.06) -> float:
         """
-        Simule une cote bookmaker réaliste avec marge intégrée.
-        Utilisé en mode démo ou si l'API des cotes est indisponible.
+        Simule une cote bookmaker rÃ©aliste avec marge intÃ©grÃ©e.
+        UtilisÃ© en mode dÃ©mo ou si l'API des cotes est indisponible.
         """
         if self.noisy_odd_fn:
             return self.noisy_odd_fn(p_model)
 
-        # Marge bookmaker typique : 5-7% sur les marchés populaires
+        # Marge bookmaker typique : 5-7% sur les marchÃ©s populaires
         p_implied = p_model * (1 - market_margin)
         if p_implied <= 0:
             return 99.0
         base_odd = 1 / p_implied
-        # Bruit aléatoire ±5% pour simuler la variation entre bookmakers
-        noise = random.uniform(0.96, 1.04)
+        # Bruit alÃ©atoire Â±5% pour simuler la variation entre bookmakers
+        noise = random.uniform(0.98, 1.02)
         return round(max(1.10, base_odd * noise), 2)
 
     def extract_football_bets(self, prediction: dict,
                                odds_data: Optional[dict] = None) -> List[dict]:
         """
-        Extrait tous les paris possibles d'une prédiction football.
-        Compare les probabilités modèles aux cotes disponibles.
+        Extrait tous les paris possibles d'une prÃ©diction football.
+        Compare les probabilitÃ©s modÃ¨les aux cotes disponibles.
         """
         bets   = []
         fix    = prediction["fixture"]
@@ -906,23 +908,23 @@ class ValueBetSelector:
         comp   = fix["competition"]
         sport  = "Football"
 
-        # Marchés disponibles et leurs probabilités modèles
+        # MarchÃ©s disponibles et leurs probabilitÃ©s modÃ¨les
         markets = [
             ("Victoire " + home,          prediction["p_home_win"],  "1X2"),
             ("Match nul",                  prediction["p_draw"],      "1X2"),
             ("Victoire " + away,           prediction["p_away_win"],  "1X2"),
             ("Over 2.5 buts",              prediction["p_over_2_5"],  "totals"),
             ("Under 2.5 buts",             prediction["p_under_2_5"], "totals"),
-            ("BTTS — Les deux marquent",   prediction["p_btts"],      "btts"),
+            ("BTTS â Les deux marquent",   prediction["p_btts"],      "btts"),
             ("BTTS Non",                   prediction["p_btts_no"],   "btts"),
         ]
 
         for bet_name, p_model, market_type in markets:
-            # Récupérer la cote bookmaker (API ou simulation)
+            # RÃ©cupÃ©rer la cote bookmaker (API ou simulation)
             odd_book = None
 
             if odds_data and "markets" in odds_data:
-                # Tentative de récupération depuis l'API des cotes
+                # Tentative de rÃ©cupÃ©ration depuis l'API des cotes
                 mkt = odds_data["markets"].get("h2h") if "1X2" in market_type else \
                       odds_data["markets"].get("totals")
                 if mkt:
@@ -956,13 +958,13 @@ class ValueBetSelector:
                     "p_model":     round(p_model * 100, 1),
                     "p_implied":   round((1 / odd_book) * 100, 1),
                     "value":       round(value * 100, 2),
-                    "confidence":  self._confidence_score(p_model, value),
+                    "confidence":  self._confidence_score(p_model, value, odd_book),
                 })
 
         return bets
 
     def extract_basketball_bets(self, prediction: dict) -> List[dict]:
-        """Extrait les paris d'une prédiction basketball."""
+        """Extrait les paris d'une prÃ©diction basketball."""
         bets  = []
         fix   = prediction["fixture"]
         home  = fix["home"]
@@ -977,7 +979,7 @@ class ValueBetSelector:
         for bet_name, p_model in markets:
             odd_book = self.simulate_bookmaker_odd(p_model)
             if not (self.min_odd <= odd_book <= self.max_odd):
-                continue
+                      continue
             value = self.calculate_value(p_model, odd_book)
             if value >= self.min_value:
                 bets.append({
@@ -991,13 +993,13 @@ class ValueBetSelector:
                     "p_model":     round(p_model * 100, 1),
                     "p_implied":   round((1 / odd_book) * 100, 1),
                     "value":       round(value * 100, 2),
-                    "confidence":  self._confidence_score(p_model, value),
+                    "confidence":  self._confidence_score(p_model, value, odd_book),
                 })
 
         return bets
 
     def extract_tennis_bets(self, prediction: dict) -> List[dict]:
-        """Extrait les paris d'une prédiction tennis."""
+        """Extrait les paris d'une prÃ©diction tennis."""
         bets  = []
         fix   = prediction["fixture"]
         home  = fix["home"]
@@ -1026,30 +1028,34 @@ class ValueBetSelector:
                     "p_model":     round(p_model * 100, 1),
                     "p_implied":   round((1 / odd_book) * 100, 1),
                     "value":       round(value * 100, 2),
-                    "confidence":  self._confidence_score(p_model, value),
+                    "confidence":  self._confidence_score(p_model, value, odd_book),
                 })
 
         return bets
 
-    def _confidence_score(self, p_model: float, value: float) -> float:
-        """
-        Calcule un score de confiance /10 basé sur la probabilité et l'edge.
-        - Haute probabilité + fort edge = confiance maximale
-        """
-        base  = p_model * 7       # Probabilité contribue 70%
-        bonus = min(3, value * 30) # Edge contribue 30%
-        return round(min(10, base + bonus), 1)
+    def _confidence_score(self, p_model: float, value: float, odd: float = 2.0) -> float:
+        """Score de confiance basÃ© sur le critÃ¨re de Kelly fractionnel."""
+        b = odd - 1
+        if b <= 0:
+            return 0.0
+        q = 1 - p_model
+        kelly_full = (b * p_model - q) / b
+        if kelly_full <= 0:
+            return 0.0
+        kelly_frac = kelly_full * KELLY["fraction"]
+        score = min(10.0, (kelly_frac * 100) / KELLY["max_stake_pct"] * 10)
+        return round(score, 1)
 
     def select_best_bets(self, all_bets: List[dict]) -> List[dict]:
         """
-        Trie tous les paris par valeur décroissante.
-        Élimine les doublons (même match, marchés incompatibles).
+        Trie tous les paris par valeur dÃ©croissante.
+        Ãlimine les doublons (mÃªme match, marchÃ©s incompatibles).
         """
-        # Trier par valeur décroissante
+        # Trier par valeur dÃ©croissante
         sorted_bets = sorted(all_bets, key=lambda x: x["value"], reverse=True)
 
         selected   = []
-        used_ids   = {}   # id_match → liste des marchés déjà sélectionnés
+        used_ids   = {}   # id_match â liste des marchÃ©s dÃ©jÃ  sÃ©lectionnÃ©s
 
         for bet in sorted_bets:
             match_id = bet["id"]
@@ -1060,10 +1066,10 @@ class ValueBetSelector:
 
             current_markets = used_ids[match_id]
 
-            # Règles d'incompatibilité pour éviter les paris redondants :
-            # ─ Ne pas combiner Over ET Under du même match
-            # ─ Ne pas combiner BTTS Oui ET Non du même match
-            # ─ Ne pas mettre 2 paris de type 1X2 du même match
+            # RÃ¨gles d'incompatibilitÃ© pour Ã©viter les paris redondants :
+            # â Ne pas combiner Over ET Under du mÃªme match
+            # â Ne pas combiner BTTS Oui ET Non du mÃªme match
+            # â Ne pas mettre 2 paris de type 1X2 du mÃªme match
             incompatible = False
 
             if market == "totals" and "totals" in current_markets:
@@ -1084,13 +1090,13 @@ class ValueBetSelector:
         return selected
 
 
-# ══════════════════════════════════════════════════════════════════════
-# CLASSE 6 : CouponBuilder — Construction et formatage du coupon final
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# CLASSE 6 : CouponBuilder â Construction et formatage du coupon final
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 class CouponBuilder:
     """
-    Assemble les paris sélectionnés en un coupon cohérent.
+    Assemble les paris sÃ©lectionnÃ©s en un coupon cohÃ©rent.
     Ajuste la composition pour atteindre la cote cible (~5.0).
     Formate le coupon pour l'affichage console.
     """
@@ -1104,7 +1110,7 @@ class CouponBuilder:
         self.target_odd = VALUE_BETTING["target_total_odd"]
 
     def total_odd(self, bets: List[dict]) -> float:
-        """Calcule la cote totale d'un coupon combiné."""
+        """Calcule la cote totale d'un coupon combinÃ©."""
         result = 1.0
         for bet in bets:
             result *= bet["odd"]
@@ -1114,14 +1120,14 @@ class CouponBuilder:
         """
         Construit le coupon optimal depuis la liste de candidats.
 
-        Algorithme amélioré :
-        1. Trie les candidats par valeur décroissante
+        Algorithme amÃ©liorÃ© :
+        1. Trie les candidats par valeur dÃ©croissante
         2. Cherche par recherche gloutonne la combinaison de N paris
            dont la cote totale est la plus proche de la cible (5.0)
-        3. Ajuste si hors fourchette en ajoutant/remplaçant
+        3. Ajuste si hors fourchette en ajoutant/remplaÃ§ant
         """
         if not candidates:
-            logger.warning("Aucun pari valide trouvé — coupon vide")
+            logger.warning("Aucun pari valide trouvÃ© â coupon vide")
             return []
 
         n = len(candidates)
@@ -1153,12 +1159,12 @@ class CouponBuilder:
         if not best_coupon:
             best_coupon = candidates[:min(self.target, len(candidates))]
 
-        # ── Stratégie 2 : ajustement fin si hors fourchette ──────
+        # ââ StratÃ©gie 2 : ajustement fin si hors fourchette ââââââ
         coupon = list(best_coupon)
         total  = self.total_odd(coupon)
 
         if total < self.min_total:
-            # Ajouter la sélection restante qui rapproche le plus de la cible
+            # Ajouter la sÃ©lection restante qui rapproche le plus de la cible
             remaining = [b for b in candidates if b not in coupon]
             if remaining:
                 best_add = min(
@@ -1166,10 +1172,10 @@ class CouponBuilder:
                     key=lambda b: abs(self.total_odd(coupon + [b]) - self.target_odd)
                 )
                 coupon.append(best_add)
-                logger.info(f"Cote {total:.2f} → ajout d'une sélection (cible {self.target_odd})")
+                logger.info(f"Cote {total:.2f} â ajout d'une sÃ©lection (cible {self.target_odd})")
 
         elif total > self.max_total:
-            # Remplacer la sélection la moins probable par une à cote plus basse
+            # Remplacer la sÃ©lection la moins probable par une Ã  cote plus basse
             if len(coupon) > 2:
                 riskiest = min(coupon, key=lambda x: x["p_model"])
                 alternatives = [b for b in candidates
@@ -1185,17 +1191,17 @@ class CouponBuilder:
                     )
                     coupon.remove(riskiest)
                     coupon.append(best_swap)
-                    logger.info(f"Cote {total:.2f} → remplacement pour rester dans la cible")
+                    logger.info(f"Cote {total:.2f} â remplacement pour rester dans la cible")
 
         return coupon
 
     def format_coupon(self, coupon: List[dict], date: str) -> str:
         """
         Formate le coupon final pour affichage console.
-        Retourne une chaîne de caractères prête à l'emploi.
+        Retourne une chaÃ®ne de caractÃ¨res prÃªte Ã  l'emploi.
         """
         if not coupon:
-            return "⚠️  Aucune sélection valide pour aujourd'hui."
+            return "â ï¸  Aucune sÃ©lection valide pour aujourd'hui."
 
         total    = self.total_odd(coupon)
         avg_edge = round(sum(b["value"] for b in coupon) / len(coupon), 2)
@@ -1203,50 +1209,50 @@ class CouponBuilder:
 
         lines = []
 
-        # ── En-tête ───────────────────────────────────────────────
-        lines.append("╔══════════════════════════════════════════════════════════════╗")
-        lines.append(f"║          🎯  COUPON DU JOUR  —  {date}                 ║")
-        lines.append("╚══════════════════════════════════════════════════════════════╝")
+        # ââ En-tÃªte âââââââââââââââââââââââââââââââââââââââââââââââ
+        lines.append("ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ")
+        lines.append(f"â          ð¯  COUPON DU JOUR  â  {date}                 â")
+        lines.append("ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ")
         lines.append("")
-        lines.append("📊 ANALYSE : Modèle Poisson-Dixon-Coles + ELO + Value Betting")
+        lines.append("ð ANALYSE : ModÃ¨le Poisson (correction scores faibles) + ELO + Value Betting")
         lines.append("")
 
-        # ── Sélections ────────────────────────────────────────────
+        # ââ SÃ©lections ââââââââââââââââââââââââââââââââââââââââââââ
         for i, bet in enumerate(coupon, start=1):
             sport_emoji = {
-                "Football":   "⚽",
-                "Basketball": "🏀",
-                "Tennis":     "🎾",
-            }.get(bet["sport"], "🏅")
+                "Football":   "â½",
+                "Basketball": "ð",
+                "Tennis":     "ð¾",
+            }.get(bet["sport"], "ð")
 
-            lines.append("─" * 64)
-            lines.append(f"SÉLECTION {i} │ {sport_emoji} {bet['sport']} │ {bet['competition']}")
+            lines.append("â" * 64)
+            lines.append(f"SÃLECTION {i} â {sport_emoji} {bet['sport']} â {bet['competition']}")
             lines.append(f"Match     : {bet['match']}")
             lines.append(f"Pari      : {bet['bet_type']}")
             lines.append(f"Cote      : {bet['odd']:.2f}")
             lines.append(
-                f"Prob. modèle : {bet['p_model']}%  │  "
-                f"Prob. implicite : {bet['p_implied']}%  │  "
+                f"Prob. modÃ¨le : {bet['p_model']}%  â  "
+                f"Prob. implicite : {bet['p_implied']}%  â  "
                 f"Edge : +{bet['value']}%"
             )
-            lines.append(f"Confiance : {'★' * int(bet['confidence'] // 2)}"
-                         f"{'☆' * (5 - int(bet['confidence'] // 2))}  ({bet['confidence']}/10)")
+            lines.append(f"Confiance : {'â' * int(bet['confidence'] // 2)}"
+                         f"{'â' * (5 - int(bet['confidence'] // 2))}  ({bet['confidence']}/10)")
 
-        # ── Résumé ────────────────────────────────────────────────
-        lines.append("─" * 64)
+        # ââ RÃ©sumÃ© ââââââââââââââââââââââââââââââââââââââââââââââââ
+        lines.append("â" * 64)
         lines.append("")
-        lines.append(f"🎰  COTE TOTALE          : {total:.2f}  "
-                     f"({'✅ Dans la cible' if self.min_total <= total <= self.max_total else '⚠️ Hors cible'})")
-        lines.append(f"💰  MISE RECOMMANDÉE     : 2% du bankroll")
-        lines.append(f"📈  EDGE MOYEN            : +{avg_edge}%")
-        lines.append(f"🔒  CONFIANCE MOYENNE    : {avg_conf}/10")
-        lines.append(f"📋  NOMBRE DE SÉLECTIONS : {len(coupon)}")
+        lines.append(f"ð°  COTE TOTALE          : {total:.2f}  "
+                     f"({'â Dans la cible' if self.min_total <= total <= self.max_total else 'â ï¸ Hors cible'})")
+        lines.append(f"ð°  MISE RECOMMANDÃE     : 2% du bankroll")
+        lines.append(f"ð  EDGE MOYEN            : +{avg_edge}%")
+        lines.append(f"ð  CONFIANCE MOYENNE    : {avg_conf}/10")
+        lines.append(f"ð  NOMBRE DE SÃLECTIONS : {len(coupon)}")
         lines.append("")
-        lines.append("─" * 64)
-        lines.append("⚠️   Ce coupon est généré par algorithme statistique.")
+        lines.append("â" * 64)
+        lines.append("â ï¸   Ce coupon est gÃ©nÃ©rÃ© par algorithme statistique.")
         lines.append("    Les paris comportent un risque de perte en capital.")
-        lines.append("    Jouez de façon responsable. Interdit aux mineurs.")
-        lines.append("─" * 64)
+        lines.append("    Jouez de faÃ§on responsable. Interdit aux mineurs.")
+        lines.append("â" * 64)
 
         return "\n".join(lines)
 
@@ -1260,25 +1266,25 @@ class CouponBuilder:
         ]
 
 
-# ══════════════════════════════════════════════════════════════════════
-# POINT D'ENTRÉE PRINCIPAL
-# ══════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# POINT D'ENTRÃE PRINCIPAL
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def run_pipeline() -> Tuple[List[dict], str]:
     """
-    Pipeline complet de génération du coupon.
+    Pipeline complet de gÃ©nÃ©ration du coupon.
     Retourne (coupon, texte_formate).
     """
-    logger.info("═" * 60)
-    logger.info("  DÉMARRAGE DU GÉNÉRATEUR DE COUPON SPORTIF")
-    logger.info("═" * 60)
+    logger.info("â" * 60)
+    logger.info("  DÃMARRAGE DU GÃNÃRATEUR DE COUPON SPORTIF")
+    logger.info("â" * 60)
 
-    # ── 1. Récupération des données ───────────────────────────────
-    logger.info("📡 Étape 1/5 : Récupération des données…")
+    # ââ 1. RÃ©cupÃ©ration des donnÃ©es âââââââââââââââââââââââââââââââ
+    logger.info("ð¡ Ãtape 1/5 : RÃ©cupÃ©ration des donnÃ©esâ¦")
     fetcher = DataFetcher()
 
     if DEMO_MODE:
-        logger.info("  ↳ Mode démo actif — utilisation de données simulées réalistes")
+        logger.info("  â³ Mode dÃ©mo actif â utilisation de donnÃ©es simulÃ©es rÃ©alistes")
         data = fetcher.get_demo_data()
     else:
         logger.info("  \u21b3 Appel aux APIs en temps r\u00e9el\u2026")
@@ -1412,27 +1418,45 @@ def run_pipeline() -> Tuple[List[dict], str]:
             logger.warning("  \u21b3 Aucun \u00e9v\u00e9nement trouv\u00e9 via Odds API \u2014 fallback d\u00e9mo")
             data = fetcher.get_demo_data()
 
-    # ── 2. Modélisation football ──────────────────────────────────
-    logger.info("📐 Étape 2/5 : Modélisation Poisson-Dixon-Coles (football)…")
+    # ââ Calcul dynamique de la moyenne de buts par ligue ââ
+    league_avg_goals_map = {}
+    if not DEMO_MODE:
+        for code in FOOTBALL_COMPETITIONS:
+            standings = fetcher.fetch_football_standings(code)
+            if standings:
+                total_goals = sum(e["goals_for"] for e in standings if e["played"] > 0)
+                total_matches = sum(e["played"] for e in standings if e["played"] > 0) / 2
+                if total_matches > 0:
+                    league_avg = total_goals / total_matches
+                    league_avg_goals_map[FOOTBALL_COMPETITIONS[code]] = round(league_avg, 2)
+                    logger.info(f"ð {FOOTBALL_COMPETITIONS[code]} : {league_avg:.2f} buts/match")
+
+    # ââ 2. ModÃ©lisation football ââââââââââââââââââââââââââââââââââ
+    logger.info("ð Ãtape 2/5 : ModÃ©lisation Poisson (correction scores faibles) (football)â¦")
     poisson_model = PoissonModel()
     football_predictions = []
 
     for fixture in data["football"]:
         try:
+            comp = fixture.get("competition", "")
+            if comp in league_avg_goals_map:
+                poisson_model.league_avg_goals = league_avg_goals_map[comp]
+            else:
+                poisson_model.league_avg_goals = POISSON_PARAMS.get("default_league_avg_goals", 2.65)
             pred = poisson_model.predict(fixture)
             football_predictions.append(pred)
             logger.info(
-                f"  ↳ {fixture['home']} vs {fixture['away']} | "
+                f"  â³ {fixture['home']} vs {fixture['away']} | "
                 f"xG : {pred['lambda_home']:.2f}-{pred['lambda_away']:.2f} | "
                 f"1X2 : {pred['p_home_win']*100:.0f}%/"
                 f"{pred['p_draw']*100:.0f}%/"
                 f"{pred['p_away_win']*100:.0f}%"
             )
         except Exception as e:
-            logger.warning(f"  ↳ Erreur prédiction {fixture.get('home','?')} : {e}")
+            logger.warning(f"  â³ Erreur prÃ©diction {fixture.get('home','?')} : {e}")
 
-    # ── 3. Modélisation basketball + tennis ───────────────────────
-    logger.info("📐 Étape 3/5 : Modélisation ELO (basketball) + Tennis…")
+    # ââ 3. ModÃ©lisation basketball + tennis âââââââââââââââââââââââ
+    logger.info("ð Ãtape 3/5 : ModÃ©lisation ELO (basketball) + Tennisâ¦")
     elo_model    = EloModel()
     tennis_model = TennisModel()
 
@@ -1444,11 +1468,11 @@ def run_pipeline() -> Tuple[List[dict], str]:
             pred = elo_model.predict(fixture)
             bball_predictions.append(pred)
             logger.info(
-                f"  ↳ [NBA] {fixture['home']} vs {fixture['away']} | "
+                f"  â³ [NBA] {fixture['home']} vs {fixture['away']} | "
                 f"P(home) : {pred['p_home_win']*100:.0f}%"
             )
         except Exception as e:
-            logger.warning(f"  ↳ Erreur prédiction basket : {e}")
+            logger.warning(f"  â³ Erreur prÃ©diction basket : {e}")
 
     for fixture in data.get("tennis", []):
         try:
@@ -1459,10 +1483,10 @@ def run_pipeline() -> Tuple[List[dict], str]:
                 f"P(home) : {pred['p_home_win']*100:.0f}%"
             )
         except Exception as e:
-            logger.warning(f"  \u21b3 Erreur prédiction tennis : {e}")
+            logger.warning(f"  \u21b3 Erreur prÃ©diction tennis : {e}")
 
-    # ── 4. Extraction des paris à valeur positive ─────────────────
-    logger.info("💎 Étape 4/5 : Identification des value bets…")
+    # ââ 4. Extraction des paris Ã  valeur positive âââââââââââââââââ
+    logger.info("ð Ãtape 4/5 : Identification des value betsâ¦")
     selector = ValueBetSelector()
     selector.noisy_odd_fn = data.get("noisy_odd")
 
@@ -1480,44 +1504,44 @@ def run_pipeline() -> Tuple[List[dict], str]:
         bets = selector.extract_tennis_bets(pred)
         all_bets.extend(bets)
 
-    # Sélection des meilleurs paris sans doublons
+    # SÃ©lection des meilleurs paris sans doublons
     best_bets = selector.select_best_bets(all_bets)
-    logger.info(f"  ↳ {len(all_bets)} paris candidats → {len(best_bets)} retenus après filtrage")
+    logger.info(f"  â³ {len(all_bets)} paris candidats â {len(best_bets)} retenus aprÃ¨s filtrage")
 
-    # ── 5. Construction et affichage du coupon ────────────────────
-    logger.info("🏗️  Étape 5/5 : Construction du coupon optimal…")
+    # ââ 5. Construction et affichage du coupon ââââââââââââââââââââ
+    logger.info("ðï¸  Ãtape 5/5 : Construction du coupon optimalâ¦")
     builder = CouponBuilder()
     coupon  = builder.build(best_bets)
 
     logger.info(
-        f"  ↳ Coupon final : {len(coupon)} sélections │ "
+        f"  â³ Coupon final : {len(coupon)} sÃ©lections â "
         f"Cote totale : {builder.total_odd(coupon):.2f}"
     )
 
-    # Affichage du coupon formaté
+    # Affichage du coupon formatÃ©
     coupon_text = builder.format_coupon(coupon, data["date"])
 
     # Export DataFrame (optionnel)
     df = builder.to_dataframe(coupon)
     if not df.empty:
-        logger.info("\n📊 Récapitulatif tabulaire :")
+        logger.info("\nð RÃ©capitulatif tabulaire :")
         logger.info("\n" + df.to_string(index=False))
 
-    logger.info("═" * 60)
-    logger.info("  GÉNÉRATION TERMINÉE")
-    logger.info("═" * 60)
+    logger.info("â" * 60)
+    logger.info("  GÃNÃRATION TERMINÃE")
+    logger.info("â" * 60)
 
     return coupon, coupon_text
 
 
 if __name__ == "__main__":
-    # Exécution principale
+    # ExÃ©cution principale
     try:
         coupon, coupon_text = run_pipeline()
         print("\n")
         print(coupon_text)
     except KeyboardInterrupt:
-        print("\n⚠️  Interruption par l'utilisateur.")
+        print("\nâ ï¸  Interruption par l'utilisateur.")
         sys.exit(0)
     except Exception as e:
         logger.error(f"Erreur critique : {e}", exc_info=True)
