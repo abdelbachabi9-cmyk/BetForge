@@ -52,6 +52,7 @@ ODDS_SPORTS = [
     "soccer_italy_serie_a",
     "soccer_uefa_champs_league",
     "basketball_nba",
+    "basketball_euroleague",
     "tennis_atp_french_open",
 ]
 
@@ -79,19 +80,23 @@ ELO_PARAMS = {
 
 # ─── PARAMÈTRES VALUE BETTING ────────────────────────────────
 VALUE_BETTING = {
-    # Edge minimum requis pour sélectionner un pari (5%)
+    # Edge minimum requis pour s\u00e9lectionner un pari (5%)
     "min_value":            0.05,
-    # Cote minimale acceptée par sélection
+    # Cote minimale accept\u00e9e par s\u00e9lection
     "min_odd":              1.30,
-    # Cote maximale acceptée par sélection
+    # Cote maximale accept\u00e9e par s\u00e9lection
     "max_odd":              4.00,
-    # Nombre cible de sélections dans le coupon
-    "target_selections":    4,
+    # Nombre cible de s\u00e9lections dans le coupon
+    "target_selections":    6,
+    # Nombre minimum de s\u00e9lections
+    "min_selections":       4,
+    # Nombre maximum de s\u00e9lections
+    "max_selections":       10,
     # Cote totale cible du coupon
     "target_total_odd":     5.0,
-    # Fourchette acceptable de cote totale
-    "min_total_odd":        4.5,
-    "max_total_odd":        6.0,
+    # Fourchette acceptable de cote totale (\u00e9largie pour multi-sport)
+    "min_total_odd":        3.0,
+    "max_total_odd":        15.0,
 }
 
 # ─── PARAMÈTRES RÉSEAU ──────────────────────────────────────
