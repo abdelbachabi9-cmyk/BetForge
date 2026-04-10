@@ -97,7 +97,8 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
     Telegram supporte le gras, l'italique et les blocs de code.
     """
     if not coupon:
-        return "⚠️ Aucune sélection valide générée aujourd'hui\\."
+        return "📅 *Pas de matchs disponibles aujourd\'hui* \\— aucun coupon généré\\.
+\nLe bot vérifiera à nouveau demain\\."  
 
     # Calculs globaux
     total_odd  = round(
@@ -169,7 +170,7 @@ def generate_coupon_message() -> str:
     try:
         logger.info("🔄 Génération du coupon APEX en cours…")
         coupon, _ = run_pipeline()
-        date = (datetime.now() + timedelta(days=1)).strftime("%d/%m/%Y")
+        date = datetime.now().strftime("%d/%m/%Y")
         return format_coupon_telegram(coupon, date)
     except Exception as e:
         logger.error(f"Erreur lors de la génération : {e}", exc_info=True)
@@ -211,6 +212,9 @@ async def cmd_coupon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     # Génération dans un thread séparé pour ne pas bloquer le bot
     loop = asyncio.get_event_loop()
     message = await loop.run_in_executor(None, generate_coupon_message)
+
+    if "Pas de matchs" in message:
+        logger.info("📅 Aucun match aujourd'hui — notification envoyée")
 
     # Suppression du message d'attente
     await wait_msg.delete()
