@@ -97,8 +97,7 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
     Telegram supporte le gras, l'italique et les blocs de code.
     """
     if not coupon:
-        return "📅 *Pas de matchs disponibles aujourd\'hui* \\— aucun coupon généré\\.
-\nLe bot vérifiera à nouveau demain\\."  
+        return "📅 *Pas de matchs disponibles aujourd'hui* — aucun coupon généré\\."
 
     # Calculs globaux
     total_odd  = round(
