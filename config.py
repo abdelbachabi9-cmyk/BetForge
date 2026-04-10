@@ -83,6 +83,11 @@ POISSON_PARAMS = {
     "goals_threshold":      2.5,
     # Nombre minimum de matchs pour calculer la force d'une équipe
     "min_matches":          5,
+    # Paramètre rho de correction des scores faibles (Poisson corrigé)
+    # Valeur empirique fixe — idéalement à estimer par MLE sur données historiques
+    "low_score_rho":        -0.13,
+    # Moyenne de buts par défaut (utilisée si pas de données dynamiques)
+    "default_league_avg_goals": 2.65,
 }
 
 # ─── PARAMÈTRES ELO (BASKETBALL) ────────────────────────────
@@ -97,23 +102,32 @@ ELO_PARAMS = {
 
 # ─── PARAMÈTRES VALUE BETTING ────────────────────────────────
 VALUE_BETTING = {
-    # Edge minimum requis pour s\u00e9lectionner un pari (5%)
+    # Edge minimum requis pour sélectionner un pari (5%)
     "min_value":            0.05,
-    # Cote minimale accept\u00e9e par s\u00e9lection
+    # Cote minimale acceptée par sélection
     "min_odd":              1.30,
-    # Cote maximale accept\u00e9e par s\u00e9lection
+    # Cote maximale acceptée par sélection
     "max_odd":              4.00,
-    # Nombre cible de s\u00e9lections dans le coupon
+    # Nombre cible de sélections dans le coupon
     "target_selections":    6,
-    # Nombre minimum de s\u00e9lections
+    # Nombre minimum de sélections
     "min_selections":       4,
-    # Nombre maximum de s\u00e9lections
+    # Nombre maximum de sélections
     "max_selections":       10,
     # Cote totale cible du coupon
     "target_total_odd":     5.0,
-    # Fourchette acceptable de cote totale (\u00e9largie pour multi-sport)
+    # Fourchette acceptable de cote totale (élargie pour multi-sport)
     "min_total_odd":        3.0,
     "max_total_odd":        15.0,
+}
+
+# ─── KELLY CRITERION ──────────────────────────────────────
+KELLY = {
+    # Fraction du Kelly (1.0 = Kelly complet, 0.25 = quart de Kelly)
+    # Le quart de Kelly est recommandé pour réduire la variance
+    "fraction":             0.25,
+    # Mise maximale (% du bankroll)
+    "max_stake_pct":        5.0,
 }
 
 # ─── PARAMÈTRES RÉSEAU ──────────────────────────────────────
