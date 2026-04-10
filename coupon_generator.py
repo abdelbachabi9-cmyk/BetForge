@@ -819,7 +819,7 @@ class ValueBetSelector:
 
             if value >= self.min_value:
                 bets.append({
-                    "id":          fix["id"],
+                    "id":          fix.get("id", f"{fix.get('home', '?')}_{fix.get('away', '?')}") ,
                     "sport":       sport,
                     "competition": comp,
                     "match":       f"{home} vs {away}",
@@ -1200,6 +1200,7 @@ def run_pipeline() -> Tuple[List[dict], str]:
             odds_events = fetcher.fetch_odds(sport_key)
             for ev in odds_events:
                 bball_real.append({
+                    "id":          ev.get("id", f"{ev['home']}_{ev['away']}"),
                     "sport":       sport_key,
                     "competition": "NBA" if "nba" in sport_key else "EuroLeague",
                     "home":        ev["home"],
