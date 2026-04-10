@@ -97,9 +97,9 @@ VALUE_BETTING = {
 # ─── PARAMÈTRES RÉSEAU ──────────────────────────────────────
 NETWORK = {
     # Timeout en secondes pour chaque appel API
-    "timeout":              10,
-    # Nombre de tentatives avant fallback
-    "max_retries":          2,
+    "timeout":              5,
+    # Nombre de tentatives avant fallback (1 = pas de retry, échec rapide)
+    "max_retries":          1,
 }
 
 # ─── MODE DÉMO ──────────────────────────────────────────────
