@@ -53,7 +53,7 @@ except ImportError:
 # Import de la configuration locale
 try:
     from config import (
-        API_KEYS, ENDPOINTS, FOOTBALL_COMPETITIONS,
+        API_KEYS, ENDPOINTS, FOOTBALL_COMPETITIONS, ODDS_SPORTS,
         POISSON_PARAMS, ELO_PARAMS, VALUE_BETTING, NETWORK, DEMO_MODE
     )
 except ImportError:
@@ -72,9 +72,14 @@ except ImportError:
                        "goals_threshold": 2.5, "min_matches": 5}
     ELO_PARAMS      = {"initial_rating": 1500, "k_factor": 20, "home_bonus": 50}
     VALUE_BETTING   = {"min_value": 0.05, "min_odd": 1.30, "max_odd": 4.00,
-                       "target_selections": 4, "target_total_odd": 5.0,
-                       "min_total_odd": 4.5, "max_total_odd": 6.0}
+                       "target_selections": 6, "min_selections": 4, "max_selections": 10,
+                       "target_total_odd": 5.0, "min_total_odd": 3.0, "max_total_odd": 15.0}
     NETWORK         = {"timeout": 10, "max_retries": 2}
+    ODDS_SPORTS = ["soccer_france_ligue_one", "soccer_england_league1",
+                   "soccer_germany_bundesliga", "soccer_spain_la_liga",
+                   "soccer_italy_serie_a", "soccer_uefa_champs_league",
+                   "basketball_nba", "basketball_euroleague",
+                   "tennis_atp_french_open"]
     DEMO_MODE       = True
 
 # Configuration du logger
@@ -969,6 +974,8 @@ class CouponBuilder:
     """
 
     def __init__(self):
+        self.min_sel    = VALUE_BETTING.get("min_selections", 4)
+        self.max_sel    = VALUE_BETTING.get("max_selections", 10)
         self.target     = VALUE_BETTING["target_selections"]
         self.min_total  = VALUE_BETTING["min_total_odd"]
         self.max_total  = VALUE_BETTING["max_total_odd"]
@@ -997,30 +1004,32 @@ class CouponBuilder:
 
         n = len(candidates)
 
-        # ── Stratégie 1 : recherche de la meilleure combinaison ──
-        # On parcourt toutes les combinaisons de taille target (max 20 candidats)
-        # pour trouver celle dont la cote est la plus proche de target_odd
+        # \u2500\u2500 Strat\u00e9gie 1 : recherche multi-taille (4 \u00e0 10 s\u00e9lections) \u2500\u2500
+        # Teste toutes les tailles entre min_sel et max_sel pour trouver
+        # la combinaison dont la cote totale est la plus proche de la cible
         best_coupon = []
         best_distance = float("inf")
 
-        # Limiter la recherche exhaustive à un sous-ensemble raisonnable
-        pool = candidates[:min(n, 15)]
+        # Limiter la recherche exhaustive \u00e0 un pool raisonnable
+        pool = candidates[:min(n, 20)]
 
-        # Générer les combinaisons de taille target
         from itertools import combinations
-        for combo in combinations(pool, min(self.target, len(pool))):
-            combo = list(combo)
-            total = self.total_odd(combo)
-            dist  = abs(total - self.target_odd)
-            # Bonus si dans la fourchette acceptable
-            if self.min_total <= total <= self.max_total:
-                dist -= 0.5
-            if dist < best_distance:
-                best_distance = dist
-                best_coupon = combo
+        for size in range(self.min_sel, min(self.max_sel + 1, len(pool) + 1)):
+            for combo in combinations(pool, size):
+                combo = list(combo)
+                total = self.total_odd(combo)
+                dist = abs(total - self.target_odd)
+                # Bonus si dans la fourchette acceptable
+                if self.min_total <= total <= self.max_total:
+                    dist -= 1.0
+                # L\u00e9ger bonus pour plus de s\u00e9lections (coupon plus riche)
+                dist -= len(combo) * 0.05
+                if dist < best_distance:
+                    best_distance = dist
+                    best_coupon = combo
 
         if not best_coupon:
-            best_coupon = candidates[:self.target]
+            best_coupon = candidates[:min(self.target, len(candidates))]
 
         # ── Stratégie 2 : ajustement fin si hors fourchette ──────
         coupon = list(best_coupon)
@@ -1150,69 +1159,93 @@ def run_pipeline() -> Tuple[List[dict], str]:
         logger.info("  ↳ Mode démo actif — utilisation de données simulées réalistes")
         data = fetcher.get_demo_data()
     else:
-        logger.info("  ↳ Appel aux APIs en temps réel…")
-        # Récupération des données réelles : matchs + classements
-        real_fixtures = []
-        team_stats: Dict[str, dict] = {}
+        logger.info("  \u21b3 Appel aux APIs en temps r\u00e9el\u2026")
         data = {"football": [], "basketball": [], "tennis": [], "date": fetcher.today}
 
-        for code in FOOTBALL_COMPETITIONS:
-            fixtures = fetcher.fetch_football_fixtures(code)
-            standings = fetcher.fetch_football_standings(code)
+        # \u2500\u2500 SOURCE PRIMAIRE : The Odds API pour TOUS les sports \u2500\u2500
+        COMPETITION_NAMES = {
+            "soccer_france_ligue_one": "Ligue 1",
+            "soccer_england_league1": "Premier League",
+            "soccer_germany_bundesliga": "Bundesliga",
+            "soccer_spain_la_liga": "La Liga",
+            "soccer_italy_serie_a": "Serie A",
+            "soccer_uefa_champs_league": "Ligue des Champions",
+            "basketball_nba": "NBA",
+            "basketball_euroleague": "EuroLeague",
+            "tennis_atp_french_open": "Roland-Garros ATP",
+            "tennis_atp_us_open": "US Open ATP",
+            "tennis_atp_wimbledon": "Wimbledon ATP",
+        }
 
-            # Construire les stats par équipe depuis le classement
-            for entry in standings:
-                if entry["played"] >= POISSON_PARAMS["min_matches"]:
-                    team_stats[entry["team"]] = {
-                        "goals_avg":    entry["goals_for"]     / entry["played"],
-                        "conceded_avg": entry["goals_against"] / entry["played"],
-                        "matches":      entry["played"],
-                    }
-
-            real_fixtures.extend(fixtures)
-
-        # Enrichir les fixtures avec les stats d'équipes pour le modèle Poisson
-        enriched = []
-        for fix in real_fixtures:
-            home_s = team_stats.get(fix["home"])
-            away_s = team_stats.get(fix["away"])
-            if home_s and away_s:
-                fix["home_goals_avg"]    = home_s["goals_avg"]
-                fix["away_goals_avg"]    = away_s["goals_avg"]
-                fix["home_conceded_avg"] = home_s["conceded_avg"]
-                fix["away_conceded_avg"] = away_s["conceded_avg"]
-                fix["home_matches"]      = home_s["matches"]
-                fix["away_matches"]      = away_s["matches"]
-                enriched.append(fix)
-
-        if enriched:
-            logger.info(f"  ↳ {len(enriched)} matchs enrichis depuis football-data.org")
-            data["football"] = enriched
-        elif real_fixtures:
-            logger.info(f"  ↳ {len(real_fixtures)} matchs récupérés mais stats manquantes — fallback démo")
-        else:
-            logger.info("  ↳ Aucun match football réel trouvé aujourd'hui")
-
-        # ── Basketball réel : NBA + EuroLeague via Odds API ──────────
-        logger.info("  ↳ Récupération des matchs basketball du jour (NBA + EuroLeague)…")
-        bball_real = []
-        for sport_key in ["basketball_nba", "basketball_euroleague"]:
+        logger.info("  \u21b3 R\u00e9cup\u00e9ration via The Odds API pour tous les sports\u2026")
+        for sport_key in ODDS_SPORTS:
             odds_events = fetcher.fetch_odds(sport_key)
+            comp_name = COMPETITION_NAMES.get(sport_key, sport_key)
+
             for ev in odds_events:
-                bball_real.append({
-                    "id":          ev.get("id", f"{ev['home']}_{ev['away']}"),
-                    "sport":       sport_key,
-                    "competition": "NBA" if "nba" in sport_key else "EuroLeague",
-                    "home":        ev["home"],
-                    "away":        ev["away"],
-                    "date":        fetcher.today,
-                    "odds_h2h":    ev["markets"].get("h2h", {}),
-                })
-        if bball_real:
-            logger.info(f"  ↳ {len(bball_real)} matchs basketball trouvés via Odds API")
-            data["basketball"] = bball_real
-        else:
-            logger.info("  ↳ Aucun match basketball aujourd'hui")
+                event = {
+                    "id": ev.get("id", f"{ev['home']}_{ev['away']}"),
+                    "sport": sport_key,
+                    "competition": comp_name,
+                    "home": ev["home"],
+                    "away": ev["away"],
+                    "date": fetcher.today,
+                    "odds_h2h": ev["markets"].get("h2h", {}),
+                }
+
+                if sport_key.startswith("soccer_"):
+                    # Stats Poisson par d\u00e9faut (moyennes de ligue europ\u00e9enne)
+                    event["home_goals_avg"] = 1.35
+                    event["away_goals_avg"] = 1.25
+                    event["home_conceded_avg"] = 1.10
+                    event["away_conceded_avg"] = 1.30
+                    event["home_matches"] = 10
+                    event["away_matches"] = 10
+                    data["football"].append(event)
+                elif sport_key.startswith("basketball_"):
+                    data["basketball"].append(event)
+                elif sport_key.startswith("tennis_"):
+                    data["tennis"].append(event)
+
+            if odds_events:
+                logger.info(f"  \u21b3 {len(odds_events)} \u00e9v\u00e9nements {comp_name} via Odds API")
+
+        # \u2500\u2500 ENRICHISSEMENT OPTIONNEL : football-data.org \u2500\u2500
+        if data["football"]:
+            try:
+                team_stats: Dict[str, dict] = {}
+                for code in FOOTBALL_COMPETITIONS:
+                    standings = fetcher.fetch_football_standings(code)
+                    for entry in standings:
+                        if entry["played"] >= POISSON_PARAMS["min_matches"]:
+                            team_stats[entry["team"]] = {
+                                "goals_avg": entry["goals_for"] / entry["played"],
+                                "conceded_avg": entry["goals_against"] / entry["played"],
+                                "matches": entry["played"],
+                            }
+                enriched_count = 0
+                for fix in data["football"]:
+                    home_s = team_stats.get(fix["home"])
+                    away_s = team_stats.get(fix["away"])
+                    if home_s and away_s:
+                        fix["home_goals_avg"] = home_s["goals_avg"]
+                        fix["away_goals_avg"] = away_s["goals_avg"]
+                        fix["home_conceded_avg"] = home_s["conceded_avg"]
+                        fix["away_conceded_avg"] = away_s["conceded_avg"]
+                        fix["home_matches"] = home_s["matches"]
+                        fix["away_matches"] = away_s["matches"]
+                        enriched_count += 1
+                if enriched_count:
+                    logger.info(f"  \u21b3 {enriched_count}/{len(data['football'])} matchs enrichis via football-data.org")
+            except Exception as e:
+                logger.warning(f"  \u21b3 Enrichissement football-data.org \u00e9chou\u00e9 : {e} \u2014 stats par d\u00e9faut utilis\u00e9es")
+
+        total_events = len(data["football"]) + len(data["basketball"]) + len(data["tennis"])
+        logger.info(f"  \u21b3 Total : {total_events} \u00e9v\u00e9nements ({len(data['football'])} football, {len(data['basketball'])} basketball, {len(data['tennis'])} tennis)")
+
+        if total_events == 0:
+            logger.warning("  \u21b3 Aucun \u00e9v\u00e9nement trouv\u00e9 via Odds API \u2014 fallback d\u00e9mo")
+            data = fetcher.get_demo_data()
 
     # ── 2. Modélisation football ──────────────────────────────────
     logger.info("📐 Étape 2/5 : Modélisation Poisson-Dixon-Coles (football)…")
@@ -1252,7 +1285,16 @@ def run_pipeline() -> Tuple[List[dict], str]:
         except Exception as e:
             logger.warning(f"  ↳ Erreur prédiction basket : {e}")
 
-    # Tennis désactivé (pas de données fiables via APIs gratuites)
+    for fixture in data.get("tennis", []):
+        try:
+            pred = tennis_model.predict(fixture)
+            tennis_predictions.append(pred)
+            logger.info(
+                f"  \u21b3 [Tennis] {fixture['home']} vs {fixture['away']} | "
+                f"P(home) : {pred['p_home_win']*100:.0f}%"
+            )
+        except Exception as e:
+            logger.warning(f"  \u21b3 Erreur prédiction tennis : {e}")
 
     # ── 4. Extraction des paris à valeur positive ─────────────────
     logger.info("💎 Étape 4/5 : Identification des value bets…")
