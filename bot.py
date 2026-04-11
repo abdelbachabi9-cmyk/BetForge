@@ -51,6 +51,25 @@ except ImportError as e:
     print(f"â Impossible d'importer coupon_generator.py : {e}")
     sys.exit(1)
 
+# ── [v2.0] Import des modules de persistance et backtesting ──────────
+try:
+    from database import ApexDatabase
+    _db = ApexDatabase()
+    logger_init = logging.getLogger("APEX-Bot")
+    logger_init.info("✅ Module de persistance (SQLite) chargé")
+except ImportError:
+    _db = None
+
+try:
+    from backtester import ApexBacktester
+    _backtester = ApexBacktester(_db) if _db else None
+    if _backtester:
+        logger_init = logging.getLogger("APEX-Bot")
+        logger_init.info("✅ Module de backtesting chargé")
+except ImportError:
+    _backtester = None
+
+
 # ââ Configuration du logger âââââââââââââââââââââââââââââââââââââââââââ
 logging.basicConfig(
     level=logging.INFO,
