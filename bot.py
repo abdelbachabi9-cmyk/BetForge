@@ -288,6 +288,115 @@ async def cmd_aide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+# ════════════════════════════════════════════════════════════════════
+# [v2.0] NOUVELLES COMMANDES — HISTORIQUE ET STATISTIQUES
+# ════════════════════════════════════════════════════════════════════
+
+async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Commande /history — Affiche l'historique des derniers coupons."""
+    if not _db:
+        await update.message.reply_text(
+            "⚠️ Module de persistance non disponible\.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    history = _db.get_history(days=30)
+    if not history:
+        await update.message.reply_text(
+            "📭 Aucun coupon dans l'historique\.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    msg = _backtester.format_history_telegram(history, limit=10)
+    await send_long_message(update.effective_chat.id, msg, context)
+
+
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Commande /stats — Affiche les statistiques de performance."""
+    if not _backtester:
+        await update.message.reply_text(
+            "⚠️ Module de backtesting non disponible\.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    wait_msg = await update.message.reply_text(
+        "📊 _Calcul des statistiques en cours\.\.\._",
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+
+    loop = asyncio.get_event_loop()
+    report = await loop.run_in_executor(None, lambda: _backtester.performance_report(90))
+    msg = _backtester.format_report_telegram(report)
+
+    await wait_msg.delete()
+    await send_long_message(update.effective_chat.id, msg, context)
+
+
+async def cmd_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Commande /result <id> <won|lost> — Enregistre le résultat d'un coupon.
+    Exemple : /result 42 won
+    """
+    if not _db:
+        await update.message.reply_text(
+            "⚠️ Module de persistance non disponible\.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    args = context.args
+    if not args or len(args) < 2:
+        await update.message.reply_text(
+            "ℹ️ Usage : \n"
+            "Exemple : ",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    try:
+        coupon_id = int(args[0])
+        result = args[1].lower()
+        if result not in ('won', 'lost', 'void', 'partial'):
+            raise ValueError
+
+        coupon_detail = _db.get_coupon_detail(coupon_id)
+        if not coupon_detail:
+            await update.message.reply_text(
+                f"❌ Coupon \#{_esc(str(coupon_id))} non trouvé\.",
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+            return
+
+        # Calcul du profit
+        stake = coupon_detail.get('stake', 2.0)
+        if result == 'won':
+            profit = round(stake * (coupon_detail['total_odd'] - 1), 2)
+        elif result == 'lost':
+            profit = -stake
+        else:
+            profit = 0.0
+
+        _db.update_coupon_result(coupon_id, result, profit)
+
+        emoji = '✅' if result == 'won' else '❌' if result == 'lost' else '⚪'
+        sign = '\+' if profit >= 0 else ''
+        await update.message.reply_text(
+            f"{emoji} Coupon \#{_esc(str(coupon_id))} → *{_esc(result)}*\n"
+            f"💰 Profit : {sign}{_esc(str(profit))} unités",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+
+    except (ValueError, IndexError):
+        await update.message.reply_text(
+            "❌ Format invalide\. Usage : ",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+
+
 # JOB PLANIFIÃ â ENVOI AUTOMATIQUE QUOTIDIEN
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
@@ -399,6 +508,10 @@ def main() -> None:
     application.add_handler(CommandHandler("coupon", cmd_coupon))
     application.add_handler(CommandHandler("status", cmd_status))
     application.add_handler(CommandHandler("aide",   cmd_aide))
+    # [v2.0] Nouvelles commandes
+    application.add_handler(CommandHandler("history", cmd_history))
+    application.add_handler(CommandHandler("stats",   cmd_stats))
+    application.add_handler(CommandHandler("result",  cmd_result))
 
     # ââ Job planifiÃ© (envoi automatique quotidien) ââââââââââââââââ
     tz = ZoneInfo(TIMEZONE)
