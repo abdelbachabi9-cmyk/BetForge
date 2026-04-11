@@ -4,7 +4,7 @@
 ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 â         GÃNÃRATEUR DE COUPON DE PARIS SPORTIFS QUOTIDIEN         â
 â         ModÃ¨le : Poisson + correction scores faibles + ELO       â
-â         Version : 1.0 | Python 3.8+                              â
+â         Version : 2.0 | Python 3.8+                              â
 ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 Ce script gÃ©nÃ¨re automatiquement un coupon de paris sportifs avec
@@ -54,7 +54,8 @@ except ImportError:
 try:
     from config import (
         API_KEYS, ENDPOINTS, FOOTBALL_COMPETITIONS, ODDS_SPORTS, API_FOOTBALL_LEAGUES,
-        POISSON_PARAMS, ELO_PARAMS, VALUE_BETTING, KELLY, NETWORK, DEMO_MODE
+        POISSON_PARAMS, ELO_PARAMS, VALUE_BETTING, KELLY, NETWORK, DEMO_MODE,
+        LEAGUE_HOME_ADVANTAGE, LEAGUE_AVG_GOALS, DATABASE, LINE_MOVEMENT
     )
 except ImportError:
     # Valeurs par dÃ©faut si config.py est absent
@@ -91,6 +92,21 @@ logging.basicConfig(
     format="%(levelname)s â %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Import des modules v2.0 (persistance, line movement)
+try:
+    from database import ApexDatabase
+    _db = ApexDatabase(DATABASE.get("path", "apex_history.db")) if DATABASE.get("auto_save", True) else None
+except Exception:
+    _db = None
+    logger.info("Module database non disponible — persistance désactivée")
+
+try:
+    from line_movement import LineMovementTracker
+    _line_tracker = LineMovementTracker(db=_db) if LINE_MOVEMENT.get("enabled", False) else None
+except Exception:
+    _line_tracker = None
+    logger.info("Module line_movement non disponible")
 
 
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -516,9 +532,14 @@ class PoissonModel:
     - P(1 ou 0 but dans le match)
     """
 
-    def __init__(self, league_avg_goals: float = None):
+    def __init__(self, league_avg_goals: float = None, league_name: str = None):
         self.league_avg_goals = league_avg_goals or POISSON_PARAMS.get("default_league_avg_goals", 2.65)
-        self.home_adv          = POISSON_PARAMS["home_advantage"]
+        # [v2.0] Calibrage home_advantage par ligue
+        if league_name and league_name in LEAGUE_HOME_ADVANTAGE:
+            self.home_adv = LEAGUE_HOME_ADVANTAGE[league_name]
+        else:
+            self.home_adv = POISSON_PARAMS["home_advantage"]
+        self._league_name = league_name
         self.max_goals         = POISSON_PARAMS["max_goals"]
         self.goals_thresh      = POISSON_PARAMS["goals_threshold"]
         self.rho               = POISSON_PARAMS.get("low_score_rho", -0.13)
@@ -1433,16 +1454,16 @@ def run_pipeline() -> Tuple[List[dict], str]:
 
     # ââ 2. ModÃ©lisation football ââââââââââââââââââââââââââââââââââ
     logger.info("ð Ãtape 2/5 : ModÃ©lisation Poisson (correction scores faibles) (football)â¦")
-    poisson_model = PoissonModel()
     football_predictions = []
 
     for fixture in data["football"]:
         try:
             comp = fixture.get("competition", "")
-            if comp in league_avg_goals_map:
-                poisson_model.league_avg_goals = league_avg_goals_map[comp]
-            else:
-                poisson_model.league_avg_goals = POISSON_PARAMS.get("default_league_avg_goals", 2.65)
+            # [v2.0] Instanciation par ligue pour calibrer home_advantage
+            league_avg = league_avg_goals_map.get(comp,
+                         LEAGUE_AVG_GOALS.get(comp,
+                         POISSON_PARAMS.get("default_league_avg_goals", 2.65)))
+            poisson_model = PoissonModel(league_avg_goals=league_avg, league_name=comp)
             pred = poisson_model.predict(fixture)
             football_predictions.append(pred)
             logger.info(
