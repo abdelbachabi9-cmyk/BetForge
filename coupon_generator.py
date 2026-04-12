@@ -85,6 +85,16 @@ except ImportError:
     API_FOOTBALL_LEAGUES = {61: "Ligue 1", 39: "Premier League", 78: "Bundesliga",
                             140: "La Liga", 135: "Serie A", 2: "Ligue des Champions"}
     DEMO_MODE       = True
+    LEAGUE_HOME_ADVANTAGE = {
+        "Premier League": 1.08, "La Liga": 1.12, "Bundesliga": 1.10,
+        "Serie A": 1.09, "Ligue 1": 1.11, "Ligue des Champions": 1.05,
+    }
+    LEAGUE_AVG_GOALS = {
+        "Premier League": 2.69, "La Liga": 2.51, "Bundesliga": 3.17,
+        "Serie A": 2.65, "Ligue 1": 2.64, "Ligue des Champions": 2.73,
+    }
+    DATABASE = {"auto_save": False, "path": "apex_history.db"}
+    LINE_MOVEMENT = {"enabled": False}
 
 # Configuration du logger
 logging.basicConfig(
@@ -1160,7 +1170,7 @@ class CouponBuilder:
         best_distance = float("inf")
 
         # Limiter la recherche exhaustive \u00e0 un pool raisonnable
-        pool = candidates[:min(n, 20)]
+        pool = candidates[:min(n, 12)]
 
         from itertools import combinations
         for size in range(self.min_sel, min(self.max_sel + 1, len(pool) + 1)):
@@ -1514,7 +1524,11 @@ def run_pipeline() -> Tuple[List[dict], str]:
     all_bets = []
 
     for pred in football_predictions:
-        bets = selector.extract_football_bets(pred)
+        fixture = pred.get("fixture", {})
+        odds_data = None
+        if "odds_h2h" in fixture:
+            odds_data = {"markets": {"h2h": fixture["odds_h2h"]}}
+        bets = selector.extract_football_bets(pred, odds_data=odds_data)
         all_bets.extend(bets)
 
     for pred in bball_predictions:
