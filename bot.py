@@ -104,6 +104,11 @@ except ValueError:
 # Synchronisation du mode dÃ©mo avec config.py
 import config
 config.DEMO_MODE = DEMO_MODE
+try:
+    import coupon_generator
+    coupon_generator.DEMO_MODE = DEMO_MODE
+except ImportError:
+    pass
 
 
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -180,7 +185,7 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
     lines.append("")
     lines.append("â" * 30)
     lines.append(
-        "ð _Variance : ~20% de chances de gain par coupon\\. "
+        "ð _Variance : \~20% de chances de gain par coupon\\. "
         "L'edge se manifeste sur 50\\-100 coupons\\._"
     )
     lines.append("")
@@ -291,13 +296,13 @@ async def cmd_aide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Poisson \\(correction scores faibles\\) pour le football, ELO pour le basket, "
         "et un modÃ¨le surface\\+forme pour le tennis\\.\n\n"
         "Seuls les paris avec un _edge \\> 5%_ \\(avantage statistique\\) "
-        "sont sÃ©lectionnÃ©s\\. Le coupon cible une cote totale de ~5\\.\n\n"
+        "sont sÃ©lectionnÃ©s\\. Le coupon cible une cote totale de \~5\\.\n\n"
         "*LÃ©gende :*\n"
         "ð¶ Cote : cote bookmaker simulÃ©e\n"
         "ð Edge : avantage statistique vs bookmaker\n"
         "ð Confiance : score /10 basÃ© sur le critÃ¨re de Kelly\n\n"
         "*Comprendre la variance :*\n"
-        "Un coupon combinÃ© Ã  cote ~5\\.0 a ~20% de chances de "
+        "Un coupon combinÃ© Ã  cote \~5\\.0 a \~20% de chances de "
         "passer\\. MÃªme avec un edge positif, il faut *50 Ã  100 "
         "coupons* \\(2\\-3 mois\\) pour que l'avantage statistique "
         "se manifeste\\.\n\n"
@@ -314,7 +319,7 @@ async def cmd_aide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Commande /history — Affiche l'historique des derniers coupons."""
-    if not _db:
+    if not _db or not _backtester:
         await update.message.reply_text(
             "⚠️ Module de persistance non disponible\.",
             parse_mode=ParseMode.MARKDOWN_V2
@@ -437,11 +442,20 @@ async def scheduled_coupon(context: ContextTypes.DEFAULT_TYPE) -> None:
         # DÃ©coupage si message trop long
         chunks = split_message(message)
         for chunk in chunks:
-            await context.bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID,
-                text=chunk,
-                parse_mode=ParseMode.MARKDOWN_V2
-            )
+                try:
+                    await context.bot.send_message(
+                        chat_id=TELEGRAM_CHAT_ID,
+                        text=chunk,
+                        parse_mode=ParseMode.MARKDOWN_V2
+                    )
+                except Exception as md_err:
+                    logger.warning(f"MarkdownV2 fallback : {md_err}")
+                    import re as _re
+                    plain = _re.sub(r'\\([_*\\[\\]()~`>#+=|{}.!\\-])', r'\\1', chunk)
+                    plain = plain.replace("*", "").replace("_", "")
+                    await context.bot.send_message(
+                        chat_id=TELEGRAM_CHAT_ID, text=plain
+                    )
         logger.info("â Coupon automatique envoyÃ© avec succÃ¨s")
     except Exception as e:
         logger.error(f"â Erreur envoi automatique : {e}", exc_info=True)
@@ -470,14 +484,22 @@ def split_message(text: str, max_len: int = 4000) -> list:
 
 async def send_long_message(chat_id, text: str,
                              context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Envoie un message potentiellement long en le dÃ©coupant."""
+    """Envoie un message potentiellement long en le découpant.
+    Fallback en texte brut si MarkdownV2 échoue."""
     chunks = split_message(text)
     for chunk in chunks:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=chunk,
-            parse_mode=ParseMode.MARKDOWN_V2
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=chunk,
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+        except Exception as md_err:
+            logger.warning(f"MarkdownV2 échoué, fallback texte brut : {md_err}")
+            import re as _re
+            plain = _re.sub(r'\\([_*\\[\\]()~`>#+=|{}.!\\-])', r'\\1', chunk)
+            plain = plain.replace('*', '').replace('_', '')
+            await context.bot.send_message(chat_id=chat_id, text=plain)
 
 
 async def post_init(application: Application) -> None:
