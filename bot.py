@@ -158,7 +158,7 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
 
     # FIX T7 : esc() local supprimé — utilise _esc() global
 
-        def stars(confidence: float) -> str:
+    def stars(confidence: float) -> str:
         """Génère les étoiles de confiance (max 4 étoiles)."""
         count = min(4, max(1, int(round(confidence / 10 * 3))))
         return "★" * count
