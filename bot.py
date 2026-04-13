@@ -23,6 +23,7 @@ Variables d'environnement requises (Railway) :
 """
 
 import os
+import re
 import sys
 import logging
 import asyncio
@@ -81,6 +82,32 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("telegram.ext.Updater").setLevel(logging.WARNING)
 logging.getLogger("telegram.ext._updater").setLevel(logging.WARNING)
+
+# FIX C1 : Filtre de securite - masquer les tokens Telegram dans les logs
+# La librairie python-telegram-bot logue le token en clair dans les exceptions
+# InvalidToken. Ce filtre le remplace par "***MASKED***" dans tous les messages.
+_TOKEN_PATTERN = re.compile(r"\d{8,}:[A-Za-z0-9_-]{30,}")
+
+class _TokenMaskFilter(logging.Filter):
+    """Masque tout token Telegram (format 123456:ABC...) dans les messages de log."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.msg and isinstance(record.msg, str):
+            record.msg = _TOKEN_PATTERN.sub("***MASKED***", record.msg)
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {
+                    k: _TOKEN_PATTERN.sub("***MASKED***", str(v)) if isinstance(v, str) else v
+                    for k, v in record.args.items()
+                }
+            elif isinstance(record.args, tuple):
+                record.args = tuple(
+                    _TOKEN_PATTERN.sub("***MASKED***", str(a)) if isinstance(a, str) else a
+                    for a in record.args
+                )
+        return True
+
+# Appliquer le filtre a TOUS les loggers (root logger)
+logging.getLogger().addFilter(_TokenMaskFilter())
 
 logger = logging.getLogger("APEX-Bot")
 
@@ -446,8 +473,7 @@ async def scheduled_coupon(context: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                 except Exception as md_err:
                     logger.warning(f"MarkdownV2 fallback : {md_err}")
-                    import re as _re
-                    plain = _re.sub(r'\\([_*\\[\\]()~`>#+=|{}.!\\-])', r'\\1', chunk)
+                    plain = re.sub(r'\\([_*\\[\\]()~`>#+=|{}.!\\-])', r'\\1', chunk)
                     plain = plain.replace("*", "").replace("_", "")
                     await context.bot.send_message(
                         chat_id=TELEGRAM_CHAT_ID, text=plain
@@ -492,8 +518,7 @@ async def send_long_message(chat_id, text: str,
             )
         except Exception as md_err:
             logger.warning(f"MarkdownV2 échoué, fallback texte brut : {md_err}")
-            import re as _re
-            plain = _re.sub(r'\\([_*\\[\\]()~`>#+=|{}.!\\-])', r'\\1', chunk)
+            plain = re.sub(r'\\([_*\\[\\]()~`>#+=|{}.!\\-])', r'\\1', chunk)
             plain = plain.replace('*', '').replace('_', '')
             await context.bot.send_message(chat_id=chat_id, text=plain)
 
