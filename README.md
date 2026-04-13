@@ -109,6 +109,9 @@ python bot.py
 | `/coupon` | Générer le coupon maintenant |
 | `/status` | Statut et prochaine génération |
 | `/aide` | Aide complète |
+| `/history` | Historique des coupons récents |
+| `/stats` | Statistiques de performance (ROI, winrate, calibration) |
+| `/result` | Enregistrer le résultat d'un coupon |
 
 ---
 
@@ -133,6 +136,7 @@ Par défaut le bot tourne en mode démo (données simulées). Pour des données 
 - **Football** : Poisson/Dixon-Coles — calcule les buts attendus (xG) et les probabilités 1X2/Over/BTTS
 - **Basketball** : ELO adapté avec bonus domicile et score de forme récente
 - **Tennis** : ELO-like basé sur le classement ATP/WTA + performance sur surface + forme
+- **Marchés stats (Football)** : Corners, Fautes, Cartons, Tirs cadrés — modèle Poisson calibré par ligue (Over/Under par ligne)
 
 Seuls les paris avec un **edge ≥ 5%** (avantage vs bookmaker) sont retenus.
 
