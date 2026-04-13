@@ -137,6 +137,16 @@ ELO_PARAMS = {
     "home_bonus": 50,
 }
 
+# --- PARAMETRES TENNIS (ELO-like + surface + forme + H2H) ----
+TENNIS_PARAMS = {
+    # Poids de la performance sur surface dans le calcul du rating
+    "surface_weight": 0.15,
+    # Poids de la forme recente (derniers matchs)
+    "form_weight": 0.08,
+    # Poids du head-to-head historique entre les deux joueurs
+    "h2h_weight": 0.10,
+}
+
 # âââ PARAMÃTRES VALUE BETTING âââââââââââââââââââââââââââââââââ
 VALUE_BETTING = {
     # Edge minimum requis pour sÃ©lectionner un pari (5%)
@@ -169,7 +179,7 @@ KELLY = {
 # âââ PARAMÃTRES RÃSEAU âââââââââââââââââââââââââââââââââââââââââ
 NETWORK = {
     # Timeout en secondes pour chaque appel API
-    "timeout": 8,
+    "timeout": 10,
     # FIX v4 : max_retries remontÃ© de 1 Ã  3
     "max_retries": 3,
     # DÃ©lai initial entre les retries (secondes) â exponential backoff
