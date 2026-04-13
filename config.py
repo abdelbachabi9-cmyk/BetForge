@@ -227,3 +227,87 @@ BACKTEST = {
     "monte_carlo_sims": 1000,
 }
 # ============================================================
+
+# ============================================================
+# MARCHÉS STATISTIQUES (corners, fautes, cartons, tirs)
+# ============================================================
+STATS_MARKETS = {
+    "enabled": True,
+    "min_matches_required": 3,  # Minimum de matchs historiques pour calculer les moyennes
+    "markets": {
+        "corners": {
+            "enabled": True,
+            "lines": [8.5, 9.5, 10.5, 11.5],  # Lignes Over/Under
+            "team_lines": [4.5, 5.5],  # Lignes par équipe
+        },
+        "fouls": {
+            "enabled": True,
+            "lines": [20.5, 22.5, 24.5],
+            "team_lines": [10.5, 11.5, 12.5],
+        },
+        "cards": {
+            "enabled": True,
+            "lines": [3.5, 4.5, 5.5],
+            "team_lines": [1.5, 2.5],
+        },
+        "shots_on_target": {
+            "enabled": True,
+            "lines": [8.5, 9.5, 10.5],
+            "team_lines": [3.5, 4.5],
+        },
+    },
+}
+
+# Moyennes de stats par ligue (pour normalisation Poisson)
+LEAGUE_AVG_CORNERS = {
+    "Premier League": 10.2,
+    "La Liga": 9.8,
+    "Bundesliga": 10.6,
+    "Serie A": 10.0,
+    "Ligue 1": 9.9,
+    "Ligue des Champions": 10.4,
+}
+
+LEAGUE_AVG_FOULS = {
+    "Premier League": 21.5,
+    "La Liga": 24.8,
+    "Bundesliga": 22.0,
+    "Serie A": 25.2,
+    "Ligue 1": 23.5,
+    "Ligue des Champions": 23.0,
+}
+
+LEAGUE_AVG_CARDS = {
+    "Premier League": 3.5,
+    "La Liga": 5.2,
+    "Bundesliga": 3.8,
+    "Serie A": 4.8,
+    "Ligue 1": 4.2,
+    "Ligue des Champions": 3.9,
+}
+
+LEAGUE_AVG_SHOTS_ON_TARGET = {
+    "Premier League": 9.8,
+    "La Liga": 9.2,
+    "Bundesliga": 10.1,
+    "Serie A": 9.0,
+    "Ligue 1": 9.3,
+    "Ligue des Champions": 9.6,
+}
+
+# ============================================================
+# AFFICHAGE TELEGRAM
+# ============================================================
+DISPLAY = {
+    "max_emojis_per_selection": 2,
+    "show_probability": False,      # Masquer la proba modèle (trop technique)
+    "show_edge": False,             # Masquer l’edge (trop technique)
+    "show_confidence_stars": True,  # Afficher les étoiles de confiance
+    "max_stars": 4,                 # Nombre max d’étoiles
+    "separator": "─" * 25,         # Séparateur entre sélections et résumé
+    "sport_emojis": {
+        "Football": "⚽",
+        "Basketball": "🏀",
+        "Tennis": "🎾",
+    },
+}
