@@ -1,0 +1,36 @@
+name: CI – BetForge syntax check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: py_compile all Python files
+        run: |
+          python -m py_compile bot.py
+          python -m py_compile config.py
+          python -m py_compile coupon_generator.py
+          python -m py_compile database.py
+          python -m py_compile backtester.py
+
+      - name: Check for syntax errors (import test)
+        run: |
+          python -c "import bot"
+          python -c "import config"
+          python -c "import database"
+          python -c "import backtester"
