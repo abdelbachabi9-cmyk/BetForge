@@ -300,7 +300,7 @@ class ApexBacktester:
             "",
             "â" * 28,
             "",
-            f"ð¯ *Coupons :  {ov['total_coupons']}",
+            f"ð¯ *Coupons : {ov['total_coupons']}*",
             f"â GagnÃ©s : {ov['won']} \\| â Perdus : {ov['lost']} \\| â³ En attente : {ov['pending']}",
             f"ð *Taux de rÃ©ussite : {esc(str(ov['win_rate_pct']))}%*",
             "",
