@@ -123,77 +123,69 @@ def _esc(text: str) -> str:
 def format_coupon_telegram(coupon: list, date: str) -> str:
     """
     Formate le coupon en MarkdownV2 pour Telegram.
-    Telegram supporte le gras, l'italique et les blocs de code.
+    Format minimaliste : 2 lignes par sélection.
     """
     if not coupon:
-        return "ð *Pas de matchs disponibles aujourd'hui* â aucun coupon gÃ©nÃ©rÃ©\\."
+        return "⚽ *Pas de matchs disponibles aujourd'hui* \."
 
     # Calculs globaux
-    total_odd  = round(
+    total_odd = round(
         functools.reduce(lambda x, y: x * y, [b["odd"] for b in coupon]), 2
     )
-    avg_edge   = round(sum(b["value"]      for b in coupon) / len(coupon), 2)
-    avg_conf   = round(sum(b["confidence"] for b in coupon) / len(coupon), 1)
 
     def esc(text: str) -> str:
-        """Ãchappe les caractÃ¨res spÃ©ciaux MarkdownV2."""
+        """Échappe les caractères spéciaux MarkdownV2."""
         special = r"\_*[]()~`>#+-=|{}.!"
         return "".join(f"\\{c}" if c in special else c for c in str(text))
 
-    lines = []
+    def stars(confidence: float) -> str:
+        """Génère les étoiles de confiance (max 4 étoiles)."""
+        count = min(4, max(1, int(round(confidence / 10 * 3))))
+        return "★" * count
 
-    # ââ En-tÃªte âââââââââââââââââââââââââââââââââââââââââââââââââââ
-    lines.append(f"ð¯ *APEX â COUPON DU JOUR*")
-    lines.append(f"ð {esc(date)}")
-    lines.append(f"ð _ModÃ¨le Poisson \\(correction scores faibles\\) \\+ ELO_")
-    lines.append("")
-    lines.append("â" * 30)
-
-    # ââ SÃ©lections ââââââââââââââââââââââââââââââââââââââââââââââââ
     sport_emoji = {
-        "Football":   "â½",
-        "Basketball": "ð",
-        "Tennis":     "ð¾",
+        "Football":   "⚽",
+        "Basketball": "U0001f3c0",
+        "Tennis":     "U0001f3be",
     }
 
-    for i, bet in enumerate(coupon, start=1):
-        emoji = sport_emoji.get(bet["sport"], "ð")
-        lines.append(f"")
-        lines.append(f"*SÃLECTION {i}* {emoji} {esc(bet['competition'])}")
-        lines.append(f"ð {esc(bet['match'])}")
-        lines.append(f"ð *{esc(bet['bet_type'])}*")
+    lines = []
+
+    # ── En-tête ─────────────────────────────────
+    lines.append(f"U0001f3af *APEX — Coupon du {esc(date)}*")
+    lines.append("")
+
+    # ── Sélections ────────────────────────────
+    for bet in coupon:
+        emoji = sport_emoji.get(bet["sport"], "🏆")
+
+        match_str = bet["match"]
+        if " - " in match_str:
+            home, _, away = match_str.partition(" - ")
+        elif " vs " in match_str:
+            home, _, away = match_str.partition(" vs ")
+        else:
+            home, away = match_str, ""
+
+        if away:
+            match_line = f"{emoji} {esc(home)} — {esc(away)}"
+        else:
+            match_line = f"{emoji} {esc(home)}"
+
         odd_str = f"{bet['odd']:.2f}"
-        lines.append(f"ð¶ Cote : *{esc(odd_str)}*")
-        lines.append(
-            f"ð Proba modÃ¨le : {esc(str(bet['p_model']))}% "
-            f"\\| Edge : \\+{esc(str(bet['value']))}%"
-        )
-        conf_stars = "â­" * int(round(bet["confidence"] / 2))
-        lines.append(f"ð Confiance : {conf_stars} {esc(str(bet['confidence']))}/10")
-        lines.append("â" * 30)
+        bet_line = f"   {esc(bet['bet_type'])} · {esc(odd_str)} · {stars(bet['confidence'])}"
 
-    # ââ RÃ©sumÃ© ââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    target_ok = 4.5 <= total_odd <= 6.0
-    status_icon = "â" if target_ok else "â ï¸"
+        lines.append(match_line)
+        lines.append(bet_line)
+        lines.append("")
 
+    # ── Résumé ────────────────────────────────────
+    total_str = esc(f"{total_odd:.2f}")
+    lines.append("─" * 25)
+    lines.append(f"Cote totale : *{total_str}* \\| {len(coupon)} sélections")
+    lines.append("Mise : 2% du bankroll")
     lines.append("")
-    lines.append(f"ð° *COTE TOTALE : {esc(str(total_odd))}* {status_icon}")
-    lines.append(f"ð° Mise recommandÃ©e : 2% du bankroll")
-    lines.append(f"ð Edge moyen : \\+{esc(str(avg_edge))}%")
-    lines.append(f"ð Confiance moyenne : {esc(str(avg_conf))}/10")
-    lines.append(f"ð SÃ©lections : {len(coupon)}")
-    lines.append("")
-    lines.append("â" * 30)
-    lines.append(
-        "ð _Variance : \~20% de chances de gain par coupon\\. "
-        "L'edge se manifeste sur 50\\-100 coupons\\._"
-    )
-    lines.append("")
-    lines.append(
-        "â ï¸ _Coupon gÃ©nÃ©rÃ© par algorithme statistique\\. "
-        "Les paris comportent un risque de perte\\. "
-        "Jouez de faÃ§on responsable\\._"
-    )
+    lines.append("⚠️ Paris à titre indicatif uniquement")
 
     return "\n".join(lines)
 
@@ -215,23 +207,19 @@ def generate_coupon_message() -> str:
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Commande /start â Message de bienvenue."""
-    user = update.effective_user
-    prenom = user.first_name if user else "lÃ "
-
+    """Commande /start — Message de bienvenue."""
     msg = (
-        f"ð¯ *Bienvenue sur APEX, {_esc(prenom)}\\!*\n\n"
-        "Je suis un bot de prÃ©diction sportive basÃ© sur des modÃ¨les "
-        "statistiques avancÃ©s \\(Poisson \\+ correction scores faibles \\+ ELO\\)\\.\n\n"
-        "*Commandes disponibles :*\n"
-        "ð /coupon â GÃ©nÃ©rer le coupon du jour\n"
-        "ð /status â Statut et prochaine gÃ©nÃ©ration\n"
-        "â /aide   â Aide complÃ¨te\n\n"
-        f"â° *Envoi automatique :* chaque jour Ã  {BOT_SEND_HOUR:02d}:{BOT_SEND_MINUTE:02d} "
-        f"\\({_esc(TIMEZONE)}\\)\n\n"
-        "â ï¸ _Les paris comportent un risque de perte\\. Jouez responsablement\\._"
+        "*APEX Bot* — Prédictions sportives quotidiennes\n\n"
+        "Commandes :\n"
+        "/coupon — Coupon du jour\n"
+        "/history — Historique 30j\n"
+        "/stats — Performance\n"
+        "/aide — Comment ça marche\n"
+        "/status — État du bot\n\n"
+        f"Envoi auto : {BOT_SEND_HOUR:02d}h{BOT_SEND_MINUTE:02d} \\({_esc(TIMEZONE)}\\)"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
+
 
 
 async def cmd_coupon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -257,7 +245,7 @@ async def cmd_coupon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Commande /status â Affiche le statut du bot."""
+    """Commande /status — Affiche le statut du bot."""
     now = datetime.now(ZoneInfo(TIMEZONE))
     next_send = now.replace(
         hour=BOT_SEND_HOUR, minute=BOT_SEND_MINUTE, second=0, microsecond=0
@@ -265,50 +253,31 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if next_send <= now:
         next_send = next_send + timedelta(days=1)
 
-    diff       = next_send - now
-    heures     = diff.seconds // 3600
-    minutes    = (diff.seconds % 3600) // 60
-    mode_label = "ð¡ DÃ©mo \\(donnÃ©es simulÃ©es\\)" if DEMO_MODE else "ð¢ Temps rÃ©el \\(APIs actives\\)"
+    mode_label = "Démo" if DEMO_MODE else "Temps réel"
 
     msg = (
-        "ð *STATUT APEX BOT*\n\n"
-        f"ð Heure actuelle : `{now.strftime('%d/%m/%Y %H:%M')}`\n"
-        f"â° Prochain coupon : `{next_send.strftime('%d/%m/%Y %H:%M')}`\n"
-        f"â Dans : {heures}h {minutes}min\n"
-        f"ð Fuseau : `{TIMEZONE}`\n"
-        f"âï¸ Mode : {mode_label}\n"
-        f"â Bot : *OpÃ©rationnel*"
+        "*Statut APEX*\n\n"
+        f"Heure : `{now.strftime('%d/%m/%Y %H:%M')}`\n"
+        f"Prochain coupon : `{next_send.strftime('%d/%m/%Y %H:%M')}`\n"
+        f"Mode : {_esc(mode_label)}\n"
+        "Statut : ✅ Opérationnel"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 async def cmd_aide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Commande /aide â Aide complÃ¨te."""
+    """Commande /aide — Comment ça marche."""
     msg = (
-        "â *AIDE APEX BOT*\n\n"
-        "*Commandes :*\n"
-        "â«ï¸ /start  â Message de bienvenue\n"
-        "â«ï¸ /coupon â GÃ©nÃ©rer le coupon du jour maintenant\n"
-        "â«ï¸ /status â Voir le statut et la prochaine gÃ©nÃ©ration\n"
-        "â«ï¸ /aide   â Cette aide\n\n"
-        "*Comment Ã§a marche ?*\n"
-        "APEX analyse les matchs du lendemain avec un modÃ¨le "
-        "Poisson \\(correction scores faibles\\) pour le football, ELO pour le basket, "
-        "et un modÃ¨le surface\\+forme pour le tennis\\.\n\n"
-        "Seuls les paris avec un _edge \\> 5%_ \\(avantage statistique\\) "
-        "sont sÃ©lectionnÃ©s\\. Le coupon cible une cote totale de \~5\\.\n\n"
-        "*LÃ©gende :*\n"
-        "ð¶ Cote : cote bookmaker simulÃ©e\n"
-        "ð Edge : avantage statistique vs bookmaker\n"
-        "ð Confiance : score /10 basÃ© sur le critÃ¨re de Kelly\n\n"
-        "*Comprendre la variance :*\n"
-        "Un coupon combinÃ© Ã  cote \~5\\.0 a \~20% de chances de "
-        "passer\\. MÃªme avec un edge positif, il faut *50 Ã  100 "
-        "coupons* \\(2\\-3 mois\\) pour que l'avantage statistique "
-        "se manifeste\\.\n\n"
-        "â ï¸ _Jouez de faÃ§on responsable\\. Interdit aux mineurs\\._"
+        "*Comment fonctionne APEX ?*\n\n"
+        "Le bot analyse les matchs du jour avec un modèle statistique "
+        "\\(Poisson pour le football, ELO pour basket/tennis\\)\\. "
+        "Il sélectionne les paris avec un avantage ≥5% par rapport aux cotes du marché\\.\n\n"
+        "Le coupon cible une cote totale d'environ 5\\.0 avec 4 à 8 sélections\\. "
+        "Mise recommandée : 2% du bankroll \\(quart de Kelly\\)\\.\n\n"
+        "Les étoiles \\(★\\) indiquent le niveau de confiance du modèle\\."
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
+
 
 
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
