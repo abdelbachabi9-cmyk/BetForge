@@ -752,9 +752,12 @@ class PoissonModel:
         matrix = self.score_matrix(lambda_h, lambda_a)
 
         # ââ ProbabilitÃ©s 1X2 ââââââââââââââââââââââââââââââââââââââ
-        p_home = float(np.sum(np.tril(matrix, -1)))   # domicile > extÃ©rieur
-        p_draw = float(np.sum(np.diag(matrix)))       # Ã©galitÃ©
-        p_away = float(np.sum(np.triu(matrix, 1)))    # extÃ©rieur > domicile
+        # FIX T4 : INVERSION CORRIGÉE — matrice[home][away]
+        #   triu(k=1) = home_goals > away_goals → victoire domicile
+        #   tril(k=-1) = away_goals > home_goals → victoire extérieur
+        p_home = float(np.sum(np.triu(matrix, 1)))    # domicile gagne
+        p_draw = float(np.sum(np.diag(matrix)))       # égalité
+        p_away = float(np.sum(np.tril(matrix, -1)))   # extérieur gagne
 
         # ââ Over/Under 2.5 buts âââââââââââââââââââââââââââââââââââ
         threshold = int(self.goals_thresh)  # 2
