@@ -145,14 +145,14 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
 
     sport_emoji = {
         "Football":   "⚽",
-        "Basketball": "U0001f3c0",
-        "Tennis":     "U0001f3be",
+        "Basketball": "🏀",
+        "Tennis":     "🎾",
     }
 
     lines = []
 
     # ── En-tête ─────────────────────────────────
-    lines.append(f"U0001f3af *APEX — Coupon du {esc(date)}*")
+    lines.append(f"🎯 *APEX — Coupon du {esc(date)}*")
     lines.append("")
 
     # ── Sélections ────────────────────────────
