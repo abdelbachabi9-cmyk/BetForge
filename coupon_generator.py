@@ -525,6 +525,122 @@ class DataFetcher:
 
         return stats
 
+    def fetch_football_stats(self, fixtures: list) -> dict:
+        """
+        Récupère les statistiques historiques (corners, fautes, cartons, tirs)
+        pour chaque fixture via api-football.
+        
+        Returns:
+            dict: {fixture_id: {"home": {stats...}, "away": {stats...}}}
+        """
+        stats_data = {}
+        
+        if DEMO_MODE:
+            # Mode démo : générer des stats réalistes
+            import random
+            seed_base = int(datetime.now().strftime("%Y%m%d"))
+            for fix in fixtures:
+                fix_id = fix.get("id", 0)
+                rng = random.Random(seed_base + fix_id)
+                stats_data[fix_id] = {
+                    "home": {
+                        "corners_avg": round(rng.uniform(4.0, 7.0), 1),
+                        "corners_conceded_avg": round(rng.uniform(3.5, 6.5), 1),
+                        "fouls_avg": round(rng.uniform(9.0, 15.0), 1),
+                        "fouls_conceded_avg": round(rng.uniform(9.0, 14.0), 1),
+                        "cards_avg": round(rng.uniform(1.2, 3.0), 1),
+                        "cards_conceded_avg": round(rng.uniform(1.0, 2.8), 1),
+                        "shots_on_target_avg": round(rng.uniform(3.5, 6.5), 1),
+                        "shots_on_target_conceded_avg": round(rng.uniform(3.0, 6.0), 1),
+                    },
+                    "away": {
+                        "corners_avg": round(rng.uniform(3.5, 6.5), 1),
+                        "corners_conceded_avg": round(rng.uniform(4.0, 7.0), 1),
+                        "fouls_avg": round(rng.uniform(9.5, 15.5), 1),
+                        "fouls_conceded_avg": round(rng.uniform(9.0, 14.5), 1),
+                        "cards_avg": round(rng.uniform(1.3, 3.2), 1),
+                        "cards_conceded_avg": round(rng.uniform(1.1, 3.0), 1),
+                        "shots_on_target_avg": round(rng.uniform(3.0, 6.0), 1),
+                        "shots_on_target_conceded_avg": round(rng.uniform(3.5, 6.5), 1),
+                    },
+                }
+            return stats_data
+        
+        # Mode réel : appel api-football /fixtures/statistics
+        try:
+            api_key = os.environ.get("API_FOOTBALL_KEY", "")
+            if not api_key:
+                logger.warning("API_FOOTBALL_KEY non définie, skip stats")
+                return stats_data
+            
+            headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "api-football-v1.p.rapidapi.com"}
+            
+            for fix in fixtures:
+                fix_id = fix.get("id", 0)
+                home_id = fix.get("home_id")
+                away_id = fix.get("away_id")
+                if not home_id or not away_id:
+                    continue
+                
+                home_stats = self._fetch_team_stats_avg(home_id, headers)
+                away_stats = self._fetch_team_stats_avg(away_id, headers)
+                
+                if home_stats and away_stats:
+                    stats_data[fix_id] = {"home": home_stats, "away": away_stats}
+        except Exception as e:
+            logger.error(f"Erreur fetch_football_stats: {e}")
+        
+        return stats_data
+    
+    def _fetch_team_stats_avg(self, team_id: int, headers: dict) -> Optional[dict]:
+        """Récupère les moyennes stats des 5 derniers matchs d'une équipe."""
+        try:
+            url = f"https://api-football-v1.p.rapidapi.com/v3/fixtures?team={team_id}&last=5"
+            resp = requests.get(url, headers=headers, timeout=8)
+            if resp.status_code != 200:
+                return None
+            
+            matches = resp.json().get("response", [])
+            if len(matches) < 3:
+                return None
+            
+            totals = {"corners": [], "fouls": [], "cards": [], "shots_on_target": []}
+            conceded = {"corners": [], "fouls": [], "cards": [], "shots_on_target": []}
+            
+            for match in matches:
+                stats_list = match.get("statistics", [])
+                for team_stats in stats_list:
+                    tid = team_stats.get("team", {}).get("id")
+                    s = {item["type"].lower(): item["value"] for item in team_stats.get("statistics", [])}
+                    
+                    if tid == team_id:
+                        totals["corners"].append(s.get("corner kicks", 0) or 0)
+                        totals["fouls"].append(s.get("fouls", 0) or 0)
+                        totals["cards"].append((s.get("yellow cards", 0) or 0) + (s.get("red cards", 0) or 0))
+                        totals["shots_on_target"].append(s.get("shots on goal", 0) or 0)
+                    else:
+                        conceded["corners"].append(s.get("corner kicks", 0) or 0)
+                        conceded["fouls"].append(s.get("fouls", 0) or 0)
+                        conceded["cards"].append((s.get("yellow cards", 0) or 0) + (s.get("red cards", 0) or 0))
+                        conceded["shots_on_target"].append(s.get("shots on goal", 0) or 0)
+            
+            def avg(lst):
+                return round(sum(lst) / len(lst), 1) if lst else 0.0
+            
+            return {
+                "corners_avg": avg(totals["corners"]),
+                "corners_conceded_avg": avg(conceded["corners"]),
+                "fouls_avg": avg(totals["fouls"]),
+                "fouls_conceded_avg": avg(conceded["fouls"]),
+                "cards_avg": avg(totals["cards"]),
+                "cards_conceded_avg": avg(conceded["cards"]),
+                "shots_on_target_avg": avg(totals["shots_on_target"]),
+                "shots_on_target_conceded_avg": avg(conceded["shots_on_target"]),
+            }
+        except Exception as e:
+            logger.error(f"Erreur _fetch_team_stats_avg: {e}")
+            return None
+
 
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # CLASSE 2 : PoissonModel â ModÃ¨le football (Poisson + correction scores faibles)
@@ -883,6 +999,130 @@ class TennisModel:
 # CLASSE 5 : ValueBetSelector â Calcul de valeur et sÃ©lection des paris
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
+class StatsModel:
+    """Modèle Poisson pour les statistiques de match (corners, fautes, cartons, tirs)."""
+    
+    def __init__(self):
+        try:
+            from config import (STATS_MARKETS, LEAGUE_AVG_CORNERS, LEAGUE_AVG_FOULS,
+                                LEAGUE_AVG_CARDS, LEAGUE_AVG_SHOTS_ON_TARGET)
+            self.config = STATS_MARKETS
+            self.league_avgs = {
+                "corners": LEAGUE_AVG_CORNERS,
+                "fouls": LEAGUE_AVG_FOULS,
+                "cards": LEAGUE_AVG_CARDS,
+                "shots_on_target": LEAGUE_AVG_SHOTS_ON_TARGET,
+            }
+        except ImportError:
+            self.config = {"enabled": False, "markets": {}}
+            self.league_avgs = {
+                "corners": {"default": 10.2},
+                "fouls": {"default": 23.0},
+                "cards": {"default": 4.2},
+                "shots_on_target": {"default": 9.5},
+            }
+    
+    def _get_league_avg(self, stat_type: str, league: str) -> float:
+        avgs = self.league_avgs.get(stat_type, {})
+        return avgs.get(league, avgs.get("default", 10.0))
+    
+    def _poisson_over(self, lam: float, line: float) -> float:
+        """P(X > line) où X ~ Poisson(lambda)."""
+        from scipy.stats import poisson
+        k = int(line)
+        return 1.0 - poisson.cdf(k, lam)
+    
+    def predict(self, fixture: dict, stats_history: dict) -> dict:
+        """
+        Calcule les probabilités pour les marchés stats d'un match.
+        
+        Args:
+            fixture: dict avec home, away, competition
+            stats_history: dict avec clés 'home' et 'away', chacun contenant
+                          corners_avg, fouls_avg, cards_avg, shots_on_target_avg,
+                          corners_conceded_avg, fouls_conceded_avg, etc.
+        
+        Returns:
+            dict avec probabilités pour chaque marché stats
+        """
+        if not self.config.get("enabled", False):
+            return {}
+        
+        league = fixture.get("competition", "default")
+        home_stats = stats_history.get("home", {})
+        away_stats = stats_history.get("away", {})
+        
+        result = {
+            "sport": "Football",
+            "fixture": fixture,
+            "stats_markets": {}
+        }
+        
+        stat_types = {
+            "corners": ("corners_avg", "corners_conceded_avg"),
+            "fouls": ("fouls_avg", "fouls_conceded_avg"),
+            "cards": ("cards_avg", "cards_conceded_avg"),
+            "shots_on_target": ("shots_on_target_avg", "shots_on_target_conceded_avg"),
+        }
+        
+        for stat_type, (avg_key, conceded_key) in stat_types.items():
+            market_cfg = self.config.get("markets", {}).get(stat_type, {})
+            if not market_cfg.get("enabled", False):
+                continue
+            
+            league_avg = self._get_league_avg(stat_type, league)
+            
+            # Lambda domicile
+            h_avg = home_stats.get(avg_key, league_avg / 2)
+            h_conc = away_stats.get(conceded_key, league_avg / 2)
+            lam_home = (h_avg / (league_avg / 2)) * (h_conc / (league_avg / 2)) * (league_avg / 2)
+            
+            # Lambda extérieur
+            a_avg = away_stats.get(avg_key, league_avg / 2)
+            a_conc = home_stats.get(conceded_key, league_avg / 2)
+            lam_away = (a_avg / (league_avg / 2)) * (a_conc / (league_avg / 2)) * (league_avg / 2)
+            
+            lam_total = lam_home + lam_away
+            
+            markets = {}
+            # Marchés total match
+            for line in market_cfg.get("lines", []):
+                p_over = self._poisson_over(lam_total, line)
+                markets[f"over_{line}_{stat_type}"] = {
+                    "prob": p_over,
+                    "label": f"Over {line} {stat_type}",
+                    "lambda": lam_total,
+                }
+                markets[f"under_{line}_{stat_type}"] = {
+                    "prob": 1.0 - p_over,
+                    "label": f"Under {line} {stat_type}",
+                    "lambda": lam_total,
+                }
+            
+            # Marchés par équipe
+            for line in market_cfg.get("team_lines", []):
+                home_name = fixture.get("home", "Home")
+                away_name = fixture.get("away", "Away")
+                
+                p_home_over = self._poisson_over(lam_home, line)
+                markets[f"home_over_{line}_{stat_type}"] = {
+                    "prob": p_home_over,
+                    "label": f"{home_name} +{line} {stat_type}",
+                    "lambda": lam_home,
+                }
+                
+                p_away_over = self._poisson_over(lam_away, line)
+                markets[f"away_over_{line}_{stat_type}"] = {
+                    "prob": p_away_over,
+                    "label": f"{away_name} +{line} {stat_type}",
+                    "lambda": lam_away,
+                }
+            
+            result["stats_markets"][stat_type] = markets
+        
+        return result
+
+
 class ValueBetSelector:
     """
     Identifie les paris Ã  valeur positive (value bets).
@@ -1077,6 +1317,91 @@ class ValueBetSelector:
         score = min(10.0, (kelly_frac * 100) / KELLY["max_stake_pct"] * 10)
         return round(score, 1)
 
+    def extract_stats_bets(self, stats_prediction: dict, odds_data: dict = None) -> list:
+        """
+        Extrait les paris statistiques avec valeur (edge >= 5%).
+        
+        Args:
+            stats_prediction: résultat de StatsModel.predict()
+            odds_data: cotes bookmaker (optionnel, simulées si absent)
+        
+        Returns:
+            list de dicts paris au format unifié
+        """
+        bets = []
+        fixture = stats_prediction.get("fixture", {})
+        stats_markets = stats_prediction.get("stats_markets", {})
+        
+        if not stats_markets:
+            return bets
+        
+        match_name = f"{fixture.get('home', '?')} vs {fixture.get('away', '?')}"
+        competition = fixture.get("competition", "Unknown")
+        fix_id = fixture.get("id", 0)
+        
+        stat_labels_fr = {
+            "corners": "corners",
+            "fouls": "fautes",
+            "cards": "cartons",
+            "shots_on_target": "tirs cadrés",
+        }
+        
+        for stat_type, markets in stats_markets.items():
+            label_fr = stat_labels_fr.get(stat_type, stat_type)
+            
+            for market_key, market_data in markets.items():
+                p_model = market_data["prob"]
+                
+                # Skip probabilités trop extrêmes
+                if p_model < 0.25 or p_model > 0.85:
+                    continue
+                
+                # Cote bookmaker (simulée si pas de données réelles)
+                if odds_data and market_key in odds_data:
+                    odd = odds_data[market_key]
+                else:
+                    # Simulation réaliste : marge bookmaker ~5-8%
+                    margin = random.uniform(0.05, 0.08)
+                    odd = round(1.0 / (p_model + margin * (1 - p_model)), 2)
+                    odd = max(1.30, min(4.00, odd))
+                
+                # Calcul edge
+                p_implied = 1.0 / odd
+                value = (p_model * odd) - 1.0
+                
+                if value < 0.05:  # Minimum 5% edge
+                    continue
+                
+                # Confiance (Kelly)
+                b = odd - 1
+                kelly_full = (b * p_model - (1 - p_model)) / b if b > 0 else 0
+                kelly_frac = kelly_full * 0.25
+                confidence = min(10.0, (kelly_frac * 100) / 5.0 * 10)
+                confidence = round(max(1.0, confidence), 1)
+                
+                # Formater le label
+                bet_label = market_data["label"]
+                # Traduire en français
+                bet_label = bet_label.replace("Over", "+").replace("Under", "-")
+                bet_label = bet_label.replace("corners", "corners").replace("fouls", "fautes")
+                bet_label = bet_label.replace("cards", "cartons").replace("shots_on_target", "tirs cadrés")
+                
+                bets.append({
+                    "id": f"{fix_id}_stats_{market_key}",
+                    "sport": "Football",
+                    "competition": competition,
+                    "match": match_name,
+                    "bet_type": bet_label,
+                    "market": f"stats_{stat_type}",
+                    "odd": odd,
+                    "p_model": round(p_model * 100, 1),
+                    "p_implied": round(p_implied * 100, 1),
+                    "value": round(value * 100, 1),
+                    "confidence": confidence,
+                })
+        
+        return bets
+
     def select_best_bets(self, all_bets: List[dict]) -> List[dict]:
         """
         Trie tous les paris par valeur dÃ©croissante.
@@ -1087,6 +1412,7 @@ class ValueBetSelector:
 
         selected   = []
         used_ids   = {}   # id_match â liste des marchÃ©s dÃ©jÃ  sÃ©lectionnÃ©s
+        stats_per_match = {}  # limite 1 pari stats par match
 
         for bet in sorted_bets:
             match_id = bet["id"]
@@ -1115,6 +1441,11 @@ class ValueBetSelector:
                 incompatible = True
 
             if not incompatible:
+                if bet.get("market", "").startswith("stats_"):
+                    match_key = bet["match"]
+                    if stats_per_match.get(match_key, 0) >= 1:
+                        continue
+                    stats_per_match[match_key] = stats_per_match.get(match_key, 0) + 1
                 selected.append(bet)
                 used_ids[match_id].append(market)
 
@@ -1530,6 +1861,27 @@ def run_pipeline() -> Tuple[List[dict], str]:
             odds_data = {"markets": {"h2h": fixture["odds_h2h"]}}
         bets = selector.extract_football_bets(pred, odds_data=odds_data)
         all_bets.extend(bets)
+
+    # --- Marchés statistiques football ---
+    try:
+        stats_model = StatsModel()
+        if stats_model.config.get("enabled", False):
+            football_fixtures = [pred.get("fixture", {}) for pred in football_predictions]
+            stats_data = fetcher.fetch_football_stats(football_fixtures)
+            
+            for pred in football_predictions:
+                fixture = pred.get("fixture", {})
+                fix_id = fixture.get("id", 0)
+                fix_stats = stats_data.get(fix_id)
+                
+                if fix_stats:
+                    stats_pred = stats_model.predict(fixture, fix_stats)
+                    stats_bets = selector.extract_stats_bets(stats_pred)
+                    all_bets.extend(stats_bets)
+            
+            logger.info(f"Paris stats ajoutés: {len([b for b in all_bets if b.get('market', '').startswith('stats_')])}")
+    except Exception as e:
+        logger.error(f"Erreur marchés statistiques: {e}")
 
     for pred in bball_predictions:
         bets = selector.extract_basketball_bets(pred)
