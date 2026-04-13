@@ -76,6 +76,12 @@ logging.basicConfig(
     format="%(asctime)s â %(levelname)s â %(name)s â %(message)s",
     datefmt="%H:%M:%S"
 )
+# FIX T1 : Empêcher httpx/httpcore de logger les URLs contenant le token
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("telegram.ext.Updater").setLevel(logging.WARNING)
+logging.getLogger("telegram.ext._updater").setLevel(logging.WARNING)
+
 logger = logging.getLogger("APEX-Bot")
 
 # ââ Variables d'environnement âââââââââââââââââââââââââââââââââââââââââ
@@ -104,6 +110,23 @@ except ValueError:
 # Synchronisation du mode dÃ©mo avec config.py
 import config
 config.DEMO_MODE = DEMO_MODE
+
+# FIX T2 : Contrôle d'accès par Telegram user ID
+from config import ALLOWED_USERS
+
+def _check_access(func):
+    """Décorateur : rejette les utilisateurs non autorisés si ALLOWED_USERS est défini."""
+    @functools.wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if ALLOWED_USERS and update.effective_user.id not in ALLOWED_USERS:
+            logger.warning(
+                f"Accès refusé pour user_id={update.effective_user.id} "
+                f"(@{update.effective_user.username})"
+            )
+            await update.message.reply_text("⛔ Accès non autorisé.")
+            return
+        return await func(update, context)
+    return wrapper
 try:
     import coupon_generator
     coupon_generator.DEMO_MODE = DEMO_MODE
@@ -133,12 +156,9 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
         functools.reduce(lambda x, y: x * y, [b["odd"] for b in coupon]), 2
     )
 
-    def esc(text: str) -> str:
-        """Échappe les caractères spéciaux MarkdownV2."""
-        special = r"\_*[]()~`>#+-=|{}.!"
-        return "".join(f"\\{c}" if c in special else c for c in str(text))
+    # FIX T7 : esc() local supprimé — utilise _esc() global
 
-    def stars(confidence: float) -> str:
+        def stars(confidence: float) -> str:
         """Génère les étoiles de confiance (max 4 étoiles)."""
         count = min(4, max(1, int(round(confidence / 10 * 3))))
         return "★" * count
@@ -152,7 +172,7 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
     lines = []
 
     # ── En-tête ─────────────────────────────────
-    lines.append(f"🎯 *APEX — Coupon du {esc(date)}*")
+    lines.append(f"🎯 *APEX — Coupon du {_esc(date)}*")
     lines.append("")
 
     # ── Sélections ────────────────────────────
@@ -168,19 +188,19 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
             home, away = match_str, ""
 
         if away:
-            match_line = f"{emoji} {esc(home)} — {esc(away)}"
+            match_line = f"{emoji} {_esc(home)} — {_esc(away)}"
         else:
-            match_line = f"{emoji} {esc(home)}"
+            match_line = f"{emoji} {_esc(home)}"
 
         odd_str = f"{bet['odd']:.2f}"
-        bet_line = f"   {esc(bet['bet_type'])} · {esc(odd_str)} · {stars(bet['confidence'])}"
+        bet_line = f"   {_esc(bet['bet_type'])} · {_esc(odd_str)} · {stars(bet['confidence'])}"
 
         lines.append(match_line)
         lines.append(bet_line)
         lines.append("")
 
     # ── Résumé ────────────────────────────────────
-    total_str = esc(f"{total_odd:.2f}")
+    total_str = _esc(f"{total_odd:.2f}")
     lines.append("─" * 25)
     lines.append(f"Cote totale : *{total_str}* \\| {len(coupon)} sélections")
     lines.append("Mise : 2% du bankroll")
@@ -206,6 +226,7 @@ def generate_coupon_message() -> str:
 # HANDLERS DES COMMANDES TELEGRAM
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
+@_check_access
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Commande /start — Message de bienvenue."""
     msg = (
@@ -222,6 +243,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 
+@_check_access
 async def cmd_coupon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Commande /coupon â GÃ©nÃ¨re et envoie le coupon Ã  la demande."""
     # Message d'attente
@@ -231,7 +253,7 @@ async def cmd_coupon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
     # GÃ©nÃ©ration dans un thread sÃ©parÃ© pour ne pas bloquer le bot
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     message = await loop.run_in_executor(None, generate_coupon_message)
 
     if "Pas de matchs" in message:
@@ -244,6 +266,7 @@ async def cmd_coupon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await send_long_message(update.effective_chat.id, message, context)
 
 
+@_check_access
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Commande /status — Affiche le statut du bot."""
     now = datetime.now(ZoneInfo(TIMEZONE))
@@ -265,6 +288,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
 
 
+@_check_access
 async def cmd_aide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Commande /aide — Comment ça marche."""
     msg = (
@@ -286,6 +310,7 @@ async def cmd_aide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # [v2.0] NOUVELLES COMMANDES — HISTORIQUE ET STATISTIQUES
 # ════════════════════════════════════════════════════════════════════
 
+@_check_access
 async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Commande /history — Affiche l'historique des derniers coupons."""
     if not _db or not _backtester:
@@ -307,6 +332,7 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await send_long_message(update.effective_chat.id, msg, context)
 
 
+@_check_access
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Commande /stats — Affiche les statistiques de performance."""
     if not _backtester:
@@ -321,7 +347,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     report = await loop.run_in_executor(None, lambda: _backtester.performance_report(90))
     msg = _backtester.format_report_telegram(report)
 
@@ -329,6 +355,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_long_message(update.effective_chat.id, msg, context)
 
 
+@_check_access
 async def cmd_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Commande /result <id> <won|lost> — Enregistre le résultat d'un coupon.
@@ -344,8 +371,8 @@ async def cmd_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     args = context.args
     if not args or len(args) < 2:
         await update.message.reply_text(
-            "ℹ️ Usage : \n"
-            "Exemple : ",
+            "ℹ️ Usage : `/result <id> <won|lost|void>`\n"
+            "Exemple : `/result 42 won`",
             parse_mode=ParseMode.MARKDOWN_V2
         )
         return
@@ -385,7 +412,7 @@ async def cmd_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     except (ValueError, IndexError):
         await update.message.reply_text(
-            "❌ Format invalide\\. Usage : ",
+            "❌ Format invalide\\. Usage : `/result <id> <won|lost|void>`",
             parse_mode=ParseMode.MARKDOWN_V2
         )
 
@@ -404,7 +431,7 @@ async def scheduled_coupon(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     logger.info(f"â° Envoi automatique du coupon vers {TELEGRAM_CHAT_ID}")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     message = await loop.run_in_executor(None, generate_coupon_message)
 
     try:
@@ -477,7 +504,10 @@ async def post_init(application: Application) -> None:
         BotCommand("start",  "DÃ©marrer le bot"),
         BotCommand("coupon", "GÃ©nÃ©rer le coupon du jour"),
         BotCommand("status", "Statut et prochaine gÃ©nÃ©ration"),
-        BotCommand("aide",   "Aide et documentation"),
+        BotCommand("aide",    "Aide et documentation"),
+        BotCommand("history", "Historique des 30 derniers jours"),
+        BotCommand("stats",   "Statistiques de performance"),
+        BotCommand("result",  "Résultat d'un coupon"),
     ]
     await application.bot.set_my_commands(commands)
     logger.info("â Commandes Telegram enregistrÃ©es")
