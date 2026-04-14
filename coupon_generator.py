@@ -28,9 +28,11 @@ Prérequis :
 import json
 import math
 import os
+import re
 import random
 import logging
 import time as _time
+from collections import Counter
 from datetime import datetime, timedelta
 from functools import reduce
 from itertools import combinations
@@ -1301,7 +1303,8 @@ class CouponBuilder:
         Returns:
             True si la diversification est respectée.
         """
-        from collections import Counter
+        if not combo:
+            return True
         league_counts = Counter(bet.get("competition", "Unknown") for bet in combo)
         return max(league_counts.values()) <= max_per_league
 
@@ -1624,8 +1627,7 @@ class BacktestTracker:
 
         elif market == "totals":
             # Extraire le seuil du bet_type (ex: "Over 2.5 buts")
-            import re as _re
-            thresh_match = _re.search(r"(\d+\.?\d*)", bet_type)
+            thresh_match = re.search(r"(\d+\.?\d*)", bet_type)
             threshold = float(thresh_match.group(1)) if thresh_match else 2.5
 
             if "over" in bet_type.lower():
@@ -1714,7 +1716,7 @@ class BacktestTracker:
 # UTILITAIRE : Fixtures NBA du jour via BallDontLie (R2)
 # ══════════════════════════════════════════════════════════════════
 
-def _fetch_nba_fixtures_today(fetcher: "DataFetcher") -> List[dict]:
+def _fetch_nba_fixtures_today(fetcher: DataFetcher) -> List[dict]:
     """
     Récupère les matchs NBA du jour via BallDontLie (R2).
     Utilisé uniquement en mode réel quand les ratings ELO sont disponibles.
