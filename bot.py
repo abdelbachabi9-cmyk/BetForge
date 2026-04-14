@@ -631,7 +631,7 @@ def main() -> None:
         time=resolve_time,
         name="daily_resolve_results"
     )
-    logger.info("Job resolution resultats planifie a 01:00 ({TIMEZONE})")
+    logger.info(f"Job resolution resultats planifie a 01:00 ({TIMEZONE})")
     logger.info(f"â° Job quotidien planifiÃ© Ã  {send_time.strftime('%H:%M')} ({TIMEZONE})")
 
     # ââ Lancement du bot ââââââââââââââââââââââââââââââââââââââââââ

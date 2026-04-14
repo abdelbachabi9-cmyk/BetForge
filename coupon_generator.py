@@ -50,6 +50,7 @@ try:
         API_KEYS, ENDPOINTS, FOOTBALL_COMPETITIONS, ODDS_SPORTS,
         POISSON_PARAMS, ELO_PARAMS, TENNIS_PARAMS, VALUE_BETTING,
         KELLY, NETWORK, CACHE, DEMO_MODE, BACKTEST, TEAM_ALIASES,
+        LEAGUE_HOME_ADVANTAGE, LEAGUE_AVG_GOALS,
     )
 except ImportError:
     # Valeurs par défaut minimales si config.py est absent
@@ -86,6 +87,12 @@ except ImportError:
     DEMO_MODE = True
     BACKTEST = {"history_file": "coupon_history.json", "auto_track": True}
     TEAM_ALIASES: dict = {}
+    LEAGUE_HOME_ADVANTAGE: dict = {
+        "PL": 1.10, "PD": 1.12, "BL1": 1.08, "SA": 1.15, "FL1": 1.11, "CL": 1.07,
+    }
+    LEAGUE_AVG_GOALS: dict = {
+        "PL": 2.85, "PD": 2.70, "BL1": 3.10, "SA": 2.60, "FL1": 2.55, "CL": 2.75,
+    }
 
 # ── Logger ────────────────────────────────────────────────────────
 logger = logging.getLogger("APEX-Engine")
@@ -645,14 +652,20 @@ class PoissonModel:
                               Accepter ce paramètre évite la mutation de self et garantit
                               la thread-safety.
         """
-        avg = league_avg_goals if league_avg_goals is not None else self.league_avg_goals
+        # ROB-1 : guard contre avg == 0 ou None (évite ZeroDivisionError)
+        avg = league_avg_goals if (league_avg_goals is not None and league_avg_goals > 0) \
+              else self.league_avg_goals
+        if avg <= 0:
+            avg = POISSON_PARAMS.get("default_league_avg_goals", 2.65)
 
         att_home = fixture["home_goals_avg"] / avg
         att_away = fixture["away_goals_avg"] / avg
         def_home = fixture["home_conceded_avg"] / avg
         def_away = fixture["away_conceded_avg"] / avg
 
-        lambda_home = att_home * def_away * avg * self.home_adv
+        # MET-1 : utiliser l'avantage domicile spécifique au fixture (par ligue) si disponible
+        home_adv = fixture.get("home_advantage", self.home_adv)
+        lambda_home = att_home * def_away * avg * home_adv
         lambda_away = att_away * def_home * avg
 
         return round(lambda_home, 4), round(lambda_away, 4)
@@ -1884,6 +1897,16 @@ def run_pipeline() -> Tuple[List[dict], str]:
                 league_avg = total_goals / total_matches
                 league_avg_goals_map[code] = round(league_avg, 2)
                 logger.info(f"  ↳ {FOOTBALL_COMPETITIONS.get(code, code)} : {league_avg:.2f} buts/match")
+            else:
+                # MET-2 : fallback sur les valeurs de référence par ligue (LEAGUE_AVG_GOALS)
+                fallback_avg = LEAGUE_AVG_GOALS.get(
+                    code, POISSON_PARAMS.get("default_league_avg_goals", 2.65)
+                )
+                league_avg_goals_map[code] = fallback_avg
+                logger.debug(
+                    f"  ↳ {FOOTBALL_COMPETITIONS.get(code, code)} : "
+                    f"pas de standings — fallback {fallback_avg:.2f} buts/match"
+                )
 
             for entry in standings:
                 if entry["played"] >= POISSON_PARAMS["min_matches"]:
@@ -1895,7 +1918,7 @@ def run_pipeline() -> Tuple[List[dict], str]:
                     }
             real_fixtures.extend(fixtures)
 
-        # Enrichir les fixtures avec la moyenne de buts de leur ligue
+        # Enrichir les fixtures avec la moyenne de buts et l'avantage domicile de leur ligue
         for fix in real_fixtures:
             home_s = team_stats.get(fix["home"])
             away_s = team_stats.get(fix["away"])
@@ -1910,6 +1933,10 @@ def run_pipeline() -> Tuple[List[dict], str]:
                 league_code = home_s.get("league_code", "")
                 fix["league_avg_goals"] = league_avg_goals_map.get(league_code)
                 fix["league_code"] = league_code  # R3 : nécessaire pour le rho par ligue
+                # MET-1 : avantage domicile spécifique à la ligue
+                fix["home_advantage"] = LEAGUE_HOME_ADVANTAGE.get(
+                    league_code, POISSON_PARAMS["home_advantage"]
+                )
                 data["football"].append(fix)
 
         if not data["football"]:
