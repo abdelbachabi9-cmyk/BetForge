@@ -1,0 +1,21 @@
+# ============================================================
+# requirements.txt — Dépendances BetForge / APEX Bot v2.0
+# ============================================================
+# Installation : pip install -r requirements.txt
+# Python requis : 3.10+
+# ============================================================
+
+# Calcul numérique et statistiques
+numpy==1.26.4
+scipy==1.13.1
+pandas==2.2.2
+
+# Appels HTTP vers les APIs
+requests==2.32.3
+
+# Bot Telegram
+python-telegram-bot[job-queue]==21.3
+
+# Tests
+pytest==8.2.2
+pytest-asyncio==0.23.7
