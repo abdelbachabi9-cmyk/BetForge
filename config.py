@@ -270,9 +270,12 @@ BACKTEST = {
 # ─── ELO NBA (R2) ───────────────────────────────────────────────
 ELO_PARAMS.update({
     # Fichier JSON des ratings ELO pré-entraînés (généré par nba_elo_bootstrap.py)
-    "ratings_file":      os.getenv("ELO_RATINGS_FILE", "nba_elo_ratings.json"),
+    "ratings_file":        os.getenv("ELO_RATINGS_FILE", "nba_elo_ratings.json"),
     # Saisons à bootstrapper (liste d'entiers)
-    "bootstrap_seasons": [2025, 2026],
+    "bootstrap_seasons":   [2025, 2026],
+    # Seuil Over/Under NBA typique (total points, moyenne saison 2024-25 ≈ 225 pts)
+    # Utilisé par EloModel._estimate_total_points pour calculer p_over/p_under.
+    "avg_total_points":    224.5,
 })
 
 # ─── MARCHÉS STATS (R9 — synchronisé depuis GitHub) ─────────────

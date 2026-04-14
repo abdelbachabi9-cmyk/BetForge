@@ -53,11 +53,12 @@ except ImportError as e:
     sys.exit(1)
 
 # ── [v2.0] Import des modules de persistance et backtesting ──────────
+_startup_logger = logging.getLogger("APEX-Bot")
+
 try:
     from database import ApexDatabase
     _db = ApexDatabase()
-    logger_init = logging.getLogger("APEX-Bot")
-    logger_init.info("✅ Module de persistance (SQLite) chargé")
+    _startup_logger.info("✅ Module de persistance (SQLite) chargé")
 except ImportError:
     _db = None
 
@@ -65,8 +66,7 @@ try:
     from backtester import ApexBacktester
     _backtester = ApexBacktester(_db) if _db else None
     if _backtester:
-        logger_init = logging.getLogger("APEX-Bot")
-        logger_init.info("✅ Module de backtesting chargé")
+        _startup_logger.info("✅ Module de backtesting chargé")
 except ImportError:
     _backtester = None
 
@@ -496,20 +496,19 @@ async def scheduled_coupon(context: ContextTypes.DEFAULT_TYPE) -> None:
         # DÃ©coupage si message trop long
         chunks = split_message(message)
         for chunk in chunks:
-                try:
-                    await context.bot.send_message(
-                        chat_id=TELEGRAM_CHAT_ID,
-                        text=chunk,
-                        parse_mode=ParseMode.MARKDOWN_V2
-                    )
-                except Exception as md_err:
-                    logger.warning(f"MarkdownV2 fallback : {md_err}")
-                    import re as _re
-                    plain = _re.sub(r'\\([_*\\[\\]()~`>#+=|{}.!\\-])', r'\\1', chunk)
-                    plain = plain.replace("*", "").replace("_", "")
-                    await context.bot.send_message(
-                        chat_id=TELEGRAM_CHAT_ID, text=plain
-                    )
+            try:
+                await context.bot.send_message(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    text=chunk,
+                    parse_mode=ParseMode.MARKDOWN_V2
+                )
+            except Exception as md_err:
+                logger.warning(f"MarkdownV2 fallback : {md_err}")
+                plain = re.sub(r'\\([_*\[\]()~`>#+=|{}.!\-])', r'\1', chunk)
+                plain = plain.replace("*", "").replace("_", "")
+                await context.bot.send_message(
+                    chat_id=TELEGRAM_CHAT_ID, text=plain
+                )
         logger.info("â Coupon automatique envoyÃ© avec succÃ¨s")
     except Exception as e:
         logger.error(f"â Erreur envoi automatique : {e}", exc_info=True)
@@ -631,7 +630,7 @@ def main() -> None:
         time=resolve_time,
         name="daily_resolve_results"
     )
-    logger.info("Job resolution resultats planifie a 01:00 ({TIMEZONE})")
+    logger.info(f"Job resolution resultats planifie a 01:00 ({TIMEZONE})")
     logger.info(f"â° Job quotidien planifiÃ© Ã  {send_time.strftime('%H:%M')} ({TIMEZONE})")
 
     # ââ Lancement du bot ââââââââââââââââââââââââââââââââââââââââââ

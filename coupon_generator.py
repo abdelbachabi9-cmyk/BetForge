@@ -70,17 +70,22 @@ except ImportError:
     ]
     POISSON_PARAMS = {
         "home_advantage": 1.1, "max_goals": 10,
-        "goals_threshold": 2.5, "min_matches": 5,
-        "low_score_rho": -0.13, "default_league_avg_goals": 2.65,
+        "goals_threshold": 2.5, "min_matches": 10,
+        "default_rho": -0.13, "default_league_avg_goals": 2.65,
     }
-    ELO_PARAMS = {"initial_rating": 1500, "k_factor": 20, "home_bonus": 50}
+    ELO_PARAMS = {
+        "initial_rating": 1500, "k_factor": 20, "home_bonus": 50,
+        "avg_total_points": 224.5,
+    }
     TENNIS_PARAMS = {"surface_weight": 0.15, "form_weight": 0.08, "h2h_weight": 0.10}
     VALUE_BETTING = {
         "min_value": 0.05, "min_odd": 1.30, "max_odd": 4.00,
-        "target_selections": 4, "target_total_odd": 5.0,
-        "min_total_odd": 4.5, "max_total_odd": 6.0,
+        "target_selections": 6, "target_total_odd": 5.0,
+        "min_total_odd": 3.0, "max_total_odd": 8.0,
+        "min_selections": 4, "max_selections": 10,
+        "max_per_league": 3, "min_confidence": 3.0,
     }
-    KELLY = {"fraction": 0.25, "min_stake_pct": 0.5, "max_stake_pct": 5.0}
+    KELLY = {"fraction": 0.25, "max_stake_pct": 5.0}
     NETWORK = {"timeout": 10, "max_retries": 3, "retry_delay": 1.0}
     CACHE = {"api_data_ttl": 3600, "coupon_ttl": 900}
     DEMO_MODE = True
@@ -182,7 +187,6 @@ class DataFetcher:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "BetForge/2.0"})
-        self.tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         self.today = datetime.now().strftime("%Y-%m-%d")
         # Générateur aléatoire local (pas de state global)
         seed = int(datetime.now().strftime("%Y%m%d"))
@@ -646,6 +650,11 @@ class PoissonModel:
                               la thread-safety.
         """
         avg = league_avg_goals if league_avg_goals is not None else self.league_avg_goals
+        if avg <= 0:
+            logger.warning(
+                f"league_avg_goals invalide ({avg}) — utilisation de la valeur par défaut"
+            )
+            avg = POISSON_PARAMS["default_league_avg_goals"]
 
         att_home = fixture["home_goals_avg"] / avg
         att_away = fixture["away_goals_avg"] / avg
@@ -868,8 +877,8 @@ class EloModel:
             total_expected : somme des points attendus
             p_over_threshold : probabilité que le total dépasse le seuil
         """
-        # Moyenne NBA saison 2024-25 ≈ 113 pts par équipe par match
-        nba_avg_total = 224.5
+        # Seuil Over/Under NBA — configurable dans ELO_PARAMS["avg_total_points"]
+        nba_avg_total = ELO_PARAMS.get("avg_total_points", 224.5)
 
         # Différence de rating ajustée (impact sur le tempo)
         elo_diff = abs(elo_home - elo_away)
