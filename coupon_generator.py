@@ -18,6 +18,7 @@ PrÃ©requis :
     pip install requests numpy scipy pandas
 """
 
+import os
 import sys
 import math
 import random
@@ -366,6 +367,12 @@ class DataFetcher:
                 "home_elo": 1650, "away_elo": 1580,
                 "home_form": [1, 1, 0, 1, 1],
                 "away_form": [1, 0, 1, 0, 1],
+                "home_ppg": round(rng.uniform(108, 118), 1),
+                "away_ppg": round(rng.uniform(104, 114), 1),
+                "home_rpg": round(rng.uniform(42, 48), 1),
+                "away_rpg": round(rng.uniform(40, 46), 1),
+                "home_3pg": round(rng.uniform(11, 16), 1),
+                "away_3pg": round(rng.uniform(10, 15), 1),
             },
             {
                 "id": 2002, "sport": "Basketball", "competition": "NBA",
@@ -373,6 +380,12 @@ class DataFetcher:
                 "home_elo": 1610, "away_elo": 1595,
                 "home_form": [1, 0, 1, 1, 0],
                 "away_form": [0, 1, 1, 0, 1],
+                "home_ppg": round(rng.uniform(110, 120), 1),
+                "away_ppg": round(rng.uniform(108, 116), 1),
+                "home_rpg": round(rng.uniform(41, 47), 1),
+                "away_rpg": round(rng.uniform(43, 48), 1),
+                "home_3pg": round(rng.uniform(13, 17), 1),
+                "away_3pg": round(rng.uniform(10, 14), 1),
             },
         ]
 
@@ -385,6 +398,13 @@ class DataFetcher:
                 "home_ranking": 2,  "away_ranking": 3,
                 "home_surface_winrate": 0.78, "away_surface_winrate": 0.72,
                 "home_form": [1, 1, 1, 0, 1], "away_form": [1, 0, 1, 1, 0],
+                "best_of": 3,
+                "home_aces_avg": round(rng.uniform(5, 10), 1),
+                "away_aces_avg": round(rng.uniform(4, 8), 1),
+                "home_service_games_avg": round(rng.uniform(4.5, 5.5), 1),
+                "away_service_games_avg": round(rng.uniform(4.5, 5.5), 1),
+                "home_tiebreak_pct": round(rng.uniform(0.15, 0.30), 2),
+                "away_tiebreak_pct": round(rng.uniform(0.15, 0.30), 2),
             },
         ]
 
@@ -1238,22 +1258,23 @@ class ValueBetSelector:
         return bets
 
     def extract_basketball_bets(self, prediction: dict) -> List[dict]:
-        """Extrait les paris d'une prÃ©diction basketball."""
+        """Extrait les paris d'une prédiction basketball (vainqueur + stats)."""
         bets  = []
         fix   = prediction["fixture"]
         home  = fix["home"]
         away  = fix["away"]
         comp  = fix["competition"]
 
-        markets = [
-            ("Victoire " + home, prediction["p_home_win"]),
-            ("Victoire " + away, prediction["p_away_win"]),
+        # --- Marché 1 : Vainqueur ---
+        winner_markets = [
+            ("Victoire " + home, prediction["p_home_win"], "winner"),
+            ("Victoire " + away, prediction["p_away_win"], "winner"),
         ]
 
-        for bet_name, p_model in markets:
+        for bet_name, p_model, market in winner_markets:
             odd_book = self.simulate_bookmaker_odd(p_model)
             if not (self.min_odd <= odd_book <= self.max_odd):
-                      continue
+                continue
             value = self.calculate_value(p_model, odd_book)
             if value >= self.min_value:
                 bets.append({
@@ -1262,7 +1283,7 @@ class ValueBetSelector:
                     "competition": comp,
                     "match":       f"{home} vs {away}",
                     "bet_type":    bet_name,
-                    "market":      "winner",
+                    "market":      market,
                     "odd":         odd_book,
                     "p_model":     round(p_model * 100, 1),
                     "p_implied":   round((1 / odd_book) * 100, 1),
@@ -1270,22 +1291,161 @@ class ValueBetSelector:
                     "confidence":  self._confidence_score(p_model, value, odd_book),
                 })
 
+        # --- Marché 2 : Over/Under Points totaux ---
+        home_ppg = fix.get("home_ppg", 0)
+        away_ppg = fix.get("away_ppg", 0)
+        if home_ppg > 0 and away_ppg > 0:
+            expected_total = home_ppg + away_ppg
+            for line in [expected_total - 5.5, expected_total + 0.5, expected_total + 5.5]:
+                line = round(line * 2) / 2
+                sigma = max(12.0, expected_total * 0.08)
+                from scipy.stats import norm
+                p_over = 1.0 - norm.cdf(line, loc=expected_total, scale=sigma)
+                p_under = 1.0 - p_over
+
+                for label, p_model, mkt in [
+                    (f"Plus de {line:.1f} points", p_over, "bball_total"),
+                    (f"Moins de {line:.1f} points", p_under, "bball_total"),
+                ]:
+                    if p_model < 0.25 or p_model > 0.85:
+                        continue
+                    odd_book = self.simulate_bookmaker_odd(p_model)
+                    if not (self.min_odd <= odd_book <= self.max_odd):
+                        continue
+                    value = self.calculate_value(p_model, odd_book)
+                    if value >= self.min_value:
+                        bets.append({
+                            "id":          fix["id"],
+                            "sport":       "Basketball",
+                            "competition": comp,
+                            "match":       f"{home} vs {away}",
+                            "bet_type":    label,
+                            "market":      mkt,
+                            "odd":         odd_book,
+                            "p_model":     round(p_model * 100, 1),
+                            "p_implied":   round((1 / odd_book) * 100, 1),
+                            "value":       round(value * 100, 2),
+                            "confidence":  self._confidence_score(p_model, value, odd_book),
+                        })
+
+        # --- Marché 3 : Écart (Handicap) ---
+        p_home = prediction["p_home_win"]
+        if home_ppg > 0 and away_ppg > 0:
+            expected_spread = home_ppg - away_ppg
+            spread_line = round(expected_spread * 2) / 2
+            if abs(spread_line) >= 1.5:
+                fav = home if spread_line > 0 else away
+                dog = away if spread_line > 0 else home
+                spread_abs = abs(spread_line)
+                p_fav_cover = min(0.80, max(0.35, p_home if spread_line > 0 else prediction["p_away_win"]))
+                for label, p_model in [
+                    (f"{fav} -{spread_abs:.1f} pts", p_fav_cover),
+                    (f"{dog} +{spread_abs:.1f} pts", 1.0 - p_fav_cover),
+                ]:
+                    odd_book = self.simulate_bookmaker_odd(p_model)
+                    if not (self.min_odd <= odd_book <= self.max_odd):
+                        continue
+                    value = self.calculate_value(p_model, odd_book)
+                    if value >= self.min_value:
+                        bets.append({
+                            "id":          fix["id"],
+                            "sport":       "Basketball",
+                            "competition": comp,
+                            "match":       f"{home} vs {away}",
+                            "bet_type":    label,
+                            "market":      "bball_spread",
+                            "odd":         odd_book,
+                            "p_model":     round(p_model * 100, 1),
+                            "p_implied":   round((1 / odd_book) * 100, 1),
+                            "value":       round(value * 100, 2),
+                            "confidence":  self._confidence_score(p_model, value, odd_book),
+                        })
+
+        # --- Marché 4 : Rebonds totaux ---
+        home_rpg = fix.get("home_rpg", 0)
+        away_rpg = fix.get("away_rpg", 0)
+        if home_rpg > 0 and away_rpg > 0:
+            expected_reb = home_rpg + away_rpg
+            line = round(expected_reb * 2) / 2
+            sigma = max(5.0, expected_reb * 0.07)
+            from scipy.stats import norm
+            p_over = 1.0 - norm.cdf(line, loc=expected_reb, scale=sigma)
+            for label, p_model in [
+                (f"Plus de {line:.1f} rebonds", p_over),
+                (f"Moins de {line:.1f} rebonds", 1.0 - p_over),
+            ]:
+                if p_model < 0.25 or p_model > 0.85:
+                    continue
+                odd_book = self.simulate_bookmaker_odd(p_model)
+                if not (self.min_odd <= odd_book <= self.max_odd):
+                    continue
+                value = self.calculate_value(p_model, odd_book)
+                if value >= self.min_value:
+                    bets.append({
+                        "id":          fix["id"],
+                        "sport":       "Basketball",
+                        "competition": comp,
+                        "match":       f"{home} vs {away}",
+                        "bet_type":    label,
+                        "market":      "bball_rebounds",
+                        "odd":         odd_book,
+                        "p_model":     round(p_model * 100, 1),
+                        "p_implied":   round((1 / odd_book) * 100, 1),
+                        "value":       round(value * 100, 2),
+                        "confidence":  self._confidence_score(p_model, value, odd_book),
+                    })
+
+        # --- Marché 5 : 3-Points marqués ---
+        home_3pg = fix.get("home_3pg", 0)
+        away_3pg = fix.get("away_3pg", 0)
+        if home_3pg > 0 and away_3pg > 0:
+            expected_3p = home_3pg + away_3pg
+            line = round(expected_3p * 2) / 2
+            sigma = max(3.0, expected_3p * 0.10)
+            from scipy.stats import norm
+            p_over = 1.0 - norm.cdf(line, loc=expected_3p, scale=sigma)
+            for label, p_model in [
+                (f"Plus de {line:.1f} paniers à 3pts", p_over),
+                (f"Moins de {line:.1f} paniers à 3pts", 1.0 - p_over),
+            ]:
+                if p_model < 0.25 or p_model > 0.85:
+                    continue
+                odd_book = self.simulate_bookmaker_odd(p_model)
+                if not (self.min_odd <= odd_book <= self.max_odd):
+                    continue
+                value = self.calculate_value(p_model, odd_book)
+                if value >= self.min_value:
+                    bets.append({
+                        "id":          fix["id"],
+                        "sport":       "Basketball",
+                        "competition": comp,
+                        "match":       f"{home} vs {away}",
+                        "bet_type":    label,
+                        "market":      "bball_3pts",
+                        "odd":         odd_book,
+                        "p_model":     round(p_model * 100, 1),
+                        "p_implied":   round((1 / odd_book) * 100, 1),
+                        "value":       round(value * 100, 2),
+                        "confidence":  self._confidence_score(p_model, value, odd_book),
+                    })
+
         return bets
 
     def extract_tennis_bets(self, prediction: dict) -> List[dict]:
-        """Extrait les paris d'une prÃ©diction tennis."""
+        """Extrait les paris d'une prédiction tennis (vainqueur + stats)."""
         bets  = []
         fix   = prediction["fixture"]
         home  = fix["home"]
         away  = fix["away"]
         comp  = fix["competition"]
+        p_home = prediction["p_home_win"]
+        p_away = prediction["p_away_win"]
 
-        markets = [
-            ("Victoire " + home, prediction["p_home_win"]),
-            ("Victoire " + away, prediction["p_away_win"]),
-        ]
-
-        for bet_name, p_model in markets:
+        # --- Marché 1 : Vainqueur ---
+        for bet_name, p_model in [
+            ("Victoire " + home, p_home),
+            ("Victoire " + away, p_away),
+        ]:
             odd_book = self.simulate_bookmaker_odd(p_model)
             if not (self.min_odd <= odd_book <= self.max_odd):
                 continue
@@ -1304,6 +1464,146 @@ class ValueBetSelector:
                     "value":       round(value * 100, 2),
                     "confidence":  self._confidence_score(p_model, value, odd_book),
                 })
+
+        # --- Marché 2 : Nombre de sets (Over/Under 2.5 pour best-of-3) ---
+        best_of = fix.get("best_of", 3)
+        if best_of == 3:
+            p_3sets = 2 * p_home * p_away * (p_home + p_away)
+            p_3sets = min(0.85, max(0.20, p_3sets))
+            p_2sets = 1.0 - p_3sets
+
+            for label, p_model, mkt in [
+                ("Plus de 2.5 sets", p_3sets, "tennis_sets"),
+                ("Moins de 2.5 sets", p_2sets, "tennis_sets"),
+            ]:
+                odd_book = self.simulate_bookmaker_odd(p_model)
+                if not (self.min_odd <= odd_book <= self.max_odd):
+                    continue
+                value = self.calculate_value(p_model, odd_book)
+                if value >= self.min_value:
+                    bets.append({
+                        "id":          fix["id"],
+                        "sport":       "Tennis",
+                        "competition": comp,
+                        "match":       f"{home} vs {away}",
+                        "bet_type":    label,
+                        "market":      mkt,
+                        "odd":         odd_book,
+                        "p_model":     round(p_model * 100, 1),
+                        "p_implied":   round((1 / odd_book) * 100, 1),
+                        "value":       round(value * 100, 2),
+                        "confidence":  self._confidence_score(p_model, value, odd_book),
+                    })
+
+        # --- Marché 3 : Over/Under jeux totaux ---
+        home_spg = fix.get("home_service_games_avg", 0)
+        away_spg = fix.get("away_service_games_avg", 0)
+        if home_spg > 0 and away_spg > 0:
+            expected_games = (home_spg + away_spg) * (3 if best_of == 3 else 5)
+        else:
+            avg_games_per_set = 9.5
+            expected_sets = 2 + p_3sets if best_of == 3 else 3 + 2 * (2 * p_home * p_away)
+            expected_games = expected_sets * avg_games_per_set
+
+        for line in [expected_games - 2.5, expected_games + 0.5, expected_games + 2.5]:
+            line = round(line * 2) / 2
+            if line < 15.5 or line > 40.5:
+                continue
+            sigma = max(3.0, expected_games * 0.10)
+            from scipy.stats import norm
+            p_over = 1.0 - norm.cdf(line, loc=expected_games, scale=sigma)
+            for label, p_model in [
+                (f"Plus de {line:.1f} jeux", p_over),
+                (f"Moins de {line:.1f} jeux", 1.0 - p_over),
+            ]:
+                if p_model < 0.25 or p_model > 0.85:
+                    continue
+                odd_book = self.simulate_bookmaker_odd(p_model)
+                if not (self.min_odd <= odd_book <= self.max_odd):
+                    continue
+                value = self.calculate_value(p_model, odd_book)
+                if value >= self.min_value:
+                    bets.append({
+                        "id":          fix["id"],
+                        "sport":       "Tennis",
+                        "competition": comp,
+                        "match":       f"{home} vs {away}",
+                        "bet_type":    label,
+                        "market":      "tennis_games",
+                        "odd":         odd_book,
+                        "p_model":     round(p_model * 100, 1),
+                        "p_implied":   round((1 / odd_book) * 100, 1),
+                        "value":       round(value * 100, 2),
+                        "confidence":  self._confidence_score(p_model, value, odd_book),
+                    })
+
+        # --- Marché 4 : Tie-break dans le match ---
+        home_tb_pct = fix.get("home_tiebreak_pct", 0)
+        away_tb_pct = fix.get("away_tiebreak_pct", 0)
+        if home_tb_pct > 0 or away_tb_pct > 0:
+            avg_tb = max(home_tb_pct, away_tb_pct)
+            expected_sets_count = 2 + (p_3sets if best_of == 3 else 2 * (2 * p_home * p_away))
+            p_at_least_1_tb = 1.0 - (1.0 - avg_tb) ** expected_sets_count
+            p_at_least_1_tb = min(0.80, max(0.15, p_at_least_1_tb))
+
+            for label, p_model in [
+                ("Au moins 1 tie-break", p_at_least_1_tb),
+                ("Aucun tie-break", 1.0 - p_at_least_1_tb),
+            ]:
+                if p_model < 0.25 or p_model > 0.85:
+                    continue
+                odd_book = self.simulate_bookmaker_odd(p_model)
+                if not (self.min_odd <= odd_book <= self.max_odd):
+                    continue
+                value = self.calculate_value(p_model, odd_book)
+                if value >= self.min_value:
+                    bets.append({
+                        "id":          fix["id"],
+                        "sport":       "Tennis",
+                        "competition": comp,
+                        "match":       f"{home} vs {away}",
+                        "bet_type":    label,
+                        "market":      "tennis_tiebreak",
+                        "odd":         odd_book,
+                        "p_model":     round(p_model * 100, 1),
+                        "p_implied":   round((1 / odd_book) * 100, 1),
+                        "value":       round(value * 100, 2),
+                        "confidence":  self._confidence_score(p_model, value, odd_book),
+                    })
+
+        # --- Marché 5 : Aces totaux (Over/Under) ---
+        home_aces = fix.get("home_aces_avg", 0)
+        away_aces = fix.get("away_aces_avg", 0)
+        if home_aces > 0 and away_aces > 0:
+            expected_aces = home_aces + away_aces
+            line = round(expected_aces * 2) / 2
+            sigma = max(3.0, expected_aces * 0.15)
+            from scipy.stats import norm
+            p_over = 1.0 - norm.cdf(line, loc=expected_aces, scale=sigma)
+            for label, p_model in [
+                (f"Plus de {line:.1f} aces", p_over),
+                (f"Moins de {line:.1f} aces", 1.0 - p_over),
+            ]:
+                if p_model < 0.25 or p_model > 0.85:
+                    continue
+                odd_book = self.simulate_bookmaker_odd(p_model)
+                if not (self.min_odd <= odd_book <= self.max_odd):
+                    continue
+                value = self.calculate_value(p_model, odd_book)
+                if value >= self.min_value:
+                    bets.append({
+                        "id":          fix["id"],
+                        "sport":       "Tennis",
+                        "competition": comp,
+                        "match":       f"{home} vs {away}",
+                        "bet_type":    label,
+                        "market":      "tennis_aces",
+                        "odd":         odd_book,
+                        "p_model":     round(p_model * 100, 1),
+                        "p_implied":   round((1 / odd_book) * 100, 1),
+                        "value":       round(value * 100, 2),
+                        "confidence":  self._confidence_score(p_model, value, odd_book),
+                    })
 
         return bets
 
@@ -1385,7 +1685,7 @@ class ValueBetSelector:
                 # Formater le label
                 bet_label = market_data["label"]
                 # Traduire en français
-                bet_label = bet_label.replace("Over", "+").replace("Under", "-")
+                bet_label = bet_label.replace("Over", "Plus de").replace("Under", "Moins de")
                 bet_label = bet_label.replace("corners", "corners").replace("fouls", "fautes")
                 bet_label = bet_label.replace("cards", "cartons").replace("shots_on_target", "tirs cadrés")
                 
@@ -1432,15 +1732,13 @@ class ValueBetSelector:
             # â Ne pas mettre 2 paris de type 1X2 du mÃªme match
             incompatible = False
 
-            if market == "totals" and "totals" in current_markets:
-                incompatible = True
-            elif market == "btts" and "btts" in current_markets:
-                incompatible = True
-            elif market == "1X2" and "1X2" in current_markets:
-                incompatible = True
-            elif market == "winner" and "winner" in current_markets:
-                incompatible = True
-            elif market == "match_winner" and "match_winner" in current_markets:
+            # Marchés mutuellement exclusifs (même match)
+            exclusive_markets = [
+                "totals", "btts", "1X2", "winner", "match_winner",
+                "bball_total", "bball_spread", "bball_rebounds", "bball_3pts",
+                "tennis_sets", "tennis_games", "tennis_tiebreak", "tennis_aces",
+            ]
+            if market in exclusive_markets and market in current_markets:
                 incompatible = True
 
             if not incompatible:
