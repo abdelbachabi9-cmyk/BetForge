@@ -133,6 +133,128 @@ TEAM_ALIASES: dict = {
     "girondins":          "bordeaux",
 }
 
+# ─── LIGUE IDs THESPORTSDB (forme récente football — option C) ───
+# Utilisé par DataFetcher.fetch_thesportsdb_recent_results() pour
+# récupérer les derniers résultats et pondérer la forme récente.
+THESPORTSDB_LEAGUES: dict = {
+    "PL":  4328,   # Premier League
+    "PD":  4335,   # La Liga
+    "BL1": 4331,   # Bundesliga
+    "SA":  4332,   # Serie A
+    "FL1": 4334,   # Ligue 1
+    "CL":  4480,   # Ligue des Champions
+}
+
+# ─── TOURNOIS TENNIS (détection automatique par date — option C) ─
+# Le pipeline active automatiquement les odds tennis quand aujourd'hui
+# est dans la période du tournoi — sans modification manuelle.
+TENNIS_TOURNAMENTS: list = [
+    {
+        "odds_key":    "tennis_atp_french_open",
+        "name":        "Roland-Garros",
+        "surface":     "clay",
+        "month_start": 5, "day_start": 25,
+        "month_end":   6, "day_end":   8,
+    },
+    {
+        "odds_key":    "tennis_atp_wimbledon",
+        "name":        "Wimbledon",
+        "surface":     "grass",
+        "month_start": 6, "day_start": 30,
+        "month_end":   7, "day_end":   13,
+    },
+    {
+        "odds_key":    "tennis_atp_us_open",
+        "name":        "US Open",
+        "surface":     "hard",
+        "month_start": 8, "day_start": 26,
+        "month_end":   9, "day_end":   7,
+    },
+    {
+        "odds_key":    "tennis_atp_australian_open",
+        "name":        "Open d'Australie",
+        "surface":     "hard",
+        "month_start": 1, "day_start": 13,
+        "month_end":   1, "day_end":   26,
+    },
+]
+
+# ─── CLASSEMENT ATP STATIQUE (top 50, avril 2026 — option C) ─────
+# Noms en minuscules pour correspondance avec les données The Odds API.
+# Mise à jour recommandée avant chaque Grand Chelem.
+ATP_RANKINGS: dict = {
+    "jannik sinner":               1,
+    "alexander zverev":            2,
+    "carlos alcaraz":              3,
+    "novak djokovic":              4,
+    "taylor fritz":                5,
+    "casper ruud":                 6,
+    "andrey rublev":               7,
+    "alex de minaur":              8,
+    "tommy paul":                  9,
+    "grigor dimitrov":            10,
+    "ugo humbert":                11,
+    "stefanos tsitsipas":         12,
+    "holger rune":                13,
+    "ben shelton":                14,
+    "sebastian korda":            15,
+    "arthur fils":                16,
+    "francisco cerundolo":        17,
+    "daniil medvedev":            18,
+    "felix auger-aliassime":      19,
+    "karen khachanov":            20,
+    "nicolas jarry":              21,
+    "brandon nakashima":          22,
+    "jiri lehecka":               23,
+    "tomas machac":               24,
+    "cameron norrie":             25,
+    "lorenzo musetti":            26,
+    "jack draper":                27,
+    "miomir kecmanovic":          28,
+    "tallon griekspoor":          29,
+    "flavio cobolli":             30,
+    "jan-lennard struff":         31,
+    "roberto bautista agut":      32,
+    "pablo carreno busta":        33,
+    "alejandro davidovich fokina": 34,
+    "matteo berrettini":          35,
+    "joao fonseca":               36,
+    "jakub mensik":               37,
+    "nuno borges":                38,
+    "lucky kokkinakis":           39,
+    "aslan karatsev":             40,
+    "albert ramos-vinolas":       41,
+    "marcos giron":               42,
+    "matteo arnaldi":             43,
+    "luca nardi":                 44,
+    "gabriel diallo":             45,
+    "christopher eubanks":        46,
+    "marton fucsovics":           47,
+    "borna coric":                48,
+    "laslo djere":                49,
+    "gael monfils":               50,
+}
+
+# ─── BONUS DE SURFACE TENNIS (spécialistes connus — option C) ────
+# Delta par rapport au win_rate neutre (0.50).
+# Positif = avantage sur cette surface. Mise à jour manuelle recommandée.
+TENNIS_SURFACE_BONUS: dict = {
+    "carlos alcaraz":              {"clay": +0.08, "grass": +0.04, "hard":  0.00},
+    "jannik sinner":               {"clay": +0.03, "grass": +0.02, "hard": +0.06},
+    "novak djokovic":              {"clay": +0.06, "grass": +0.08, "hard": +0.05},
+    "casper ruud":                 {"clay": +0.10, "grass": -0.06, "hard":  0.00},
+    "stefanos tsitsipas":          {"clay": +0.08, "grass": -0.03, "hard": +0.01},
+    "francisco cerundolo":         {"clay": +0.09, "grass": -0.05, "hard":  0.00},
+    "alejandro davidovich fokina": {"clay": +0.09, "grass": -0.04, "hard": -0.01},
+    "daniil medvedev":             {"clay": -0.04, "grass": -0.02, "hard": +0.07},
+    "taylor fritz":                {"clay": -0.02, "grass":  0.00, "hard": +0.05},
+    "ben shelton":                 {"clay": -0.03, "grass": -0.01, "hard": +0.06},
+    "alexander zverev":            {"clay": +0.04, "grass": +0.01, "hard": +0.03},
+    "lorenzo musetti":             {"clay": +0.07, "grass": -0.03, "hard":  0.00},
+    "holger rune":                 {"clay": +0.05, "grass": -0.01, "hard": +0.01},
+    "rafael nadal":                {"clay": +0.15, "grass": -0.02, "hard": +0.02},
+}
+
 # ─── PARAMÈTRES DU MODÈLE DE POISSON ─────────────────────────
 POISSON_PARAMS = {
     # Avantage à domicile (facteur multiplicatif sur les buts)
@@ -165,6 +287,10 @@ POISSON_PARAMS = {
     # ATTENTION : varie par ligue (Bundesliga ~3.1, Serie A ~2.6, L1 ~2.5)
     # → Calculée dynamiquement dans DataFetcher si standings disponibles
     "default_league_avg_goals": 2.65,
+    # Option C : poids de la forme récente (5 derniers matchs TheSportsDB)
+    # vs statistiques cumulées de la saison dans calculate_lambdas().
+    # 0.0 = stats saison uniquement, 0.35 = 35% forme récente + 65% saison
+    "form_blend_weight": 0.35,
 }
 
 # ─── PARAMÈTRES ELO (BASKETBALL) ──────────────────────────────

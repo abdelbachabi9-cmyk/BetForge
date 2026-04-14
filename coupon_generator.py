@@ -50,6 +50,8 @@ try:
         API_KEYS, ENDPOINTS, FOOTBALL_COMPETITIONS, ODDS_SPORTS,
         POISSON_PARAMS, ELO_PARAMS, TENNIS_PARAMS, VALUE_BETTING,
         KELLY, NETWORK, CACHE, DEMO_MODE, BACKTEST, TEAM_ALIASES,
+        THESPORTSDB_LEAGUES, TENNIS_TOURNAMENTS, ATP_RANKINGS,
+        TENNIS_SURFACE_BONUS,
     )
 except ImportError:
     # Valeurs par défaut minimales si config.py est absent
@@ -91,6 +93,10 @@ except ImportError:
     DEMO_MODE = True
     BACKTEST = {"history_file": "coupon_history.json", "auto_track": True}
     TEAM_ALIASES: dict = {}
+    THESPORTSDB_LEAGUES: dict = {}
+    TENNIS_TOURNAMENTS: list = []
+    ATP_RANKINGS: dict = {}
+    TENNIS_SURFACE_BONUS: dict = {}
 
 # ── Logger ────────────────────────────────────────────────────────
 logger = logging.getLogger("APEX-Engine")
@@ -601,6 +607,154 @@ class DataFetcher:
         logger.info(f"fetch_match_results : {len(results)} résultats récupérés pour {date}")
         return results
 
+    # ── Option C : Forme récente football via TheSportsDB ──────────
+
+    def fetch_thesportsdb_recent_results(self, league_id: int) -> List[dict]:
+        """
+        Récupère les derniers résultats d'une ligue depuis TheSportsDB (option C).
+        Utilisé pour pondérer la forme récente dans le modèle Poisson.
+
+        Args:
+            league_id: Identifiant TheSportsDB (THESPORTSDB_LEAGUES).
+
+        Returns:
+            Liste de matchs récents {home, away, home_score, away_score, date}.
+        """
+        url = f"{ENDPOINTS['thesportsdb_base']}/eventslastleague.php"
+        params = {"id": league_id}
+        data = self._get(url, params=params, api_name="thesportsdb")
+        if not data:
+            return []
+
+        results = []
+        for event in (data.get("results") or []):
+            try:
+                hs = event.get("intHomeScore")
+                as_ = event.get("intAwayScore")
+                if hs is None or as_ is None:
+                    continue
+                results.append({
+                    "home":       event.get("strHomeTeam", ""),
+                    "away":       event.get("strAwayTeam", ""),
+                    "home_score": int(hs),
+                    "away_score": int(as_),
+                    "date":       event.get("dateEvent", ""),
+                })
+            except (ValueError, TypeError):
+                continue
+        return results
+
+    def compute_team_recent_stats(
+        self,
+        recent_results: List[dict],
+        team_name: str,
+        min_matches: int = 3,
+    ) -> Optional[Dict[str, float]]:
+        """
+        Calcule les statistiques de forme récente d'une équipe (option C).
+
+        Args:
+            recent_results: Derniers matchs retournés par fetch_thesportsdb_recent_results().
+            team_name: Nom de l'équipe à analyser (normalisé en interne).
+            min_matches: Minimum de matchs requis pour retourner des stats.
+
+        Returns:
+            Dict {goals_avg, conceded_avg, matches} ou None si données insuffisantes.
+        """
+        name_norm = normalize_team_name(team_name)
+        gf: List[int] = []
+        ga: List[int] = []
+
+        for match in recent_results:
+            h_norm = normalize_team_name(match.get("home", ""))
+            a_norm = normalize_team_name(match.get("away", ""))
+            if name_norm == h_norm or name_norm in h_norm:
+                gf.append(match["home_score"])
+                ga.append(match["away_score"])
+            elif name_norm == a_norm or name_norm in a_norm:
+                gf.append(match["away_score"])
+                ga.append(match["home_score"])
+
+        if len(gf) < min_matches:
+            return None
+        return {
+            "goals_avg":    round(sum(gf) / len(gf), 3),
+            "conceded_avg": round(sum(ga) / len(ga), 3),
+            "matches":      len(gf),
+        }
+
+    # ── Option C : Fixtures tennis réels via The Odds API ──────────
+
+    def fetch_tennis_fixtures_real(
+        self,
+        all_odds: Dict[str, List[dict]],
+    ) -> List[dict]:
+        """
+        Génère des fixtures tennis réels depuis les cotes The Odds API (option C).
+        Détecte automatiquement les tournois actifs par date calendaire.
+
+        Args:
+            all_odds: Résultat de fetch_all_odds() (peut contenir des clés tennis).
+
+        Returns:
+            Liste de fixtures compatibles avec TennisModel.predict().
+        """
+        today_dt = datetime.now()
+        surface_map: Dict[str, str] = {}
+        name_map: Dict[str, str] = {}
+
+        for tournament in TENNIS_TOURNAMENTS:
+            try:
+                start = today_dt.replace(
+                    month=tournament["month_start"], day=tournament["day_start"],
+                    hour=0, minute=0, second=0, microsecond=0,
+                )
+                end = today_dt.replace(
+                    month=tournament["month_end"], day=tournament["day_end"],
+                    hour=23, minute=59, second=59, microsecond=0,
+                )
+                if start <= today_dt <= end:
+                    surface_map[tournament["odds_key"]] = tournament["surface"]
+                    name_map[tournament["odds_key"]] = tournament["name"]
+            except ValueError:
+                continue  # Dates invalides (ex: leap year)
+
+        fixtures: List[dict] = []
+        match_id = 3000
+
+        for sport_key, surface in surface_map.items():
+            # Récupérer les cotes tennis si pas encore dans all_odds
+            odds_list = all_odds.get(sport_key)
+            if odds_list is None:
+                odds_list = self.fetch_odds(sport_key)
+
+            competition = name_map.get(sport_key, sport_key)
+            for game in (odds_list or []):
+                home = game.get("home", "")
+                away = game.get("away", "")
+                if not home or not away:
+                    continue
+                fixtures.append({
+                    "id":          match_id,
+                    "sport":       "Tennis",
+                    "competition": competition,
+                    "home":        home,
+                    "away":        away,
+                    "surface":     surface,
+                    "date":        self.today,
+                    # Incertitude modèle : sans stats individuelles → minimum
+                    "home_matches": 20,
+                    "away_matches": 20,
+                })
+                match_id += 1
+
+        if fixtures:
+            logger.info(
+                f"  ↳ Tennis réel : {len(fixtures)} match(s) — "
+                f"{', '.join(name_map.values())}"
+            )
+        return fixtures
+
 
 # ══════════════════════════════════════════════════════════════════
 # CLASSE 2 : PoissonModel — Modèle football (Poisson + correction dépendance)
@@ -643,6 +797,10 @@ class PoissonModel:
         lambda_home = att_home × def_away × avg_goals × home_adv
         lambda_away = att_away × def_home × avg_goals
 
+        Option C : si le fixture contient recent_home_stats / recent_away_stats
+        (récupérés depuis TheSportsDB), les statistiques de forme récente sont
+        blendées avec les stats de saison via POISSON_PARAMS["form_blend_weight"].
+
         Args:
             fixture: Données du match (home_goals_avg, away_goals_avg, etc.)
             league_avg_goals: Moyenne de buts de la ligue (prioritaire sur self.league_avg_goals).
@@ -656,10 +814,33 @@ class PoissonModel:
             )
             avg = POISSON_PARAMS["default_league_avg_goals"]
 
+        # ── Stats saison cumulées (source : standings football-data.org)
         att_home = fixture["home_goals_avg"] / avg
         att_away = fixture["away_goals_avg"] / avg
         def_home = fixture["home_conceded_avg"] / avg
         def_away = fixture["away_conceded_avg"] / avg
+
+        # ── Option C : blending forme récente (TheSportsDB) ─────────
+        form_w = POISSON_PARAMS.get("form_blend_weight", 0.0)
+        if form_w > 0:
+            recent_h = fixture.get("recent_home_stats")
+            recent_a = fixture.get("recent_away_stats")
+            if recent_h and recent_h.get("matches", 0) >= 3:
+                att_home = (1 - form_w) * att_home + form_w * (recent_h["goals_avg"] / avg)
+                def_home = (1 - form_w) * def_home + form_w * (recent_h["conceded_avg"] / avg)
+                logger.debug(
+                    f"  Forme récente {fixture.get('home','?')} : "
+                    f"{recent_h['goals_avg']:.2f}G/{recent_h['conceded_avg']:.2f}GA "
+                    f"({recent_h['matches']} matchs)"
+                )
+            if recent_a and recent_a.get("matches", 0) >= 3:
+                att_away = (1 - form_w) * att_away + form_w * (recent_a["goals_avg"] / avg)
+                def_away = (1 - form_w) * def_away + form_w * (recent_a["conceded_avg"] / avg)
+                logger.debug(
+                    f"  Forme récente {fixture.get('away','?')} : "
+                    f"{recent_a['goals_avg']:.2f}G/{recent_a['conceded_avg']:.2f}GA "
+                    f"({recent_a['matches']} matchs)"
+                )
 
         lambda_home = att_home * def_away * avg * self.home_adv
         lambda_away = att_away * def_home * avg
@@ -1008,20 +1189,88 @@ class TennisModel:
         else:
             return -0.02 * (matches_last_30d - 6)
 
+    def _lookup_atp_ranking(self, player_name: str) -> int:
+        """
+        Cherche le classement ATP d'un joueur dans ATP_RANKINGS (option C).
+        Essaie dans l'ordre : correspondance exacte → nom de famille → partielle.
+
+        Returns:
+            Rang ATP (1 = meilleur). Défaut 100 si inconnu.
+        """
+        if not ATP_RANKINGS:
+            return 100
+        name_lower = player_name.lower().strip()
+
+        # 1. Correspondance exacte
+        if name_lower in ATP_RANKINGS:
+            return ATP_RANKINGS[name_lower]
+
+        # 2. Correspondance par nom de famille (dernier mot)
+        last = name_lower.split()[-1] if name_lower else ""
+        for known, rank in ATP_RANKINGS.items():
+            if last and known.split()[-1] == last:
+                return rank
+
+        # 3. Correspondance partielle (les deux derniers mots du nom connu)
+        for known, rank in ATP_RANKINGS.items():
+            words = known.split()
+            if len(words) >= 2 and all(w in name_lower for w in words[-2:]):
+                return rank
+
+        return 100  # Inconnu → rang 100 (ELO ~1750)
+
+    def _get_surface_winrate(self, player_name: str, surface: str) -> float:
+        """
+        Retourne le taux de victoire sur surface pour un joueur connu (option C).
+        Source : TENNIS_SURFACE_BONUS (table statique config.py).
+
+        Returns:
+            Float [0.10, 0.90]. 0.50 = neutre (pas de spécialité connue).
+        """
+        if not TENNIS_SURFACE_BONUS:
+            return 0.50
+        name_lower = player_name.lower().strip()
+
+        data = TENNIS_SURFACE_BONUS.get(name_lower)
+        if not data:
+            last = name_lower.split()[-1] if name_lower else ""
+            for known, d in TENNIS_SURFACE_BONUS.items():
+                if last and known.split()[-1] == last:
+                    data = d
+                    break
+
+        if data:
+            delta = data.get(surface, 0.0)
+            return max(0.10, min(0.90, 0.50 + delta))
+        return 0.50
+
     def predict(self, fixture: dict) -> Dict[str, Any]:
-        """Prédit le résultat d'un match de tennis."""
+        """
+        Prédit le résultat d'un match de tennis.
+
+        Option C : si home_ranking / away_ranking sont absents du fixture
+        (cas des matchs temps réel sans données individuelles),
+        on les résout depuis ATP_RANKINGS et TENNIS_SURFACE_BONUS.
+        """
         home, away = fixture["home"], fixture["away"]
         surface = fixture.get("surface", "hard")
 
-        elo_home = self.ranking_to_elo(fixture.get("home_ranking", 100))
-        elo_away = self.ranking_to_elo(fixture.get("away_ranking", 100))
+        # Option C : ranking depuis le fixture OU lookup ATP_RANKINGS
+        home_ranking = fixture.get("home_ranking") or self._lookup_atp_ranking(home)
+        away_ranking = fixture.get("away_ranking") or self._lookup_atp_ranking(away)
+
+        elo_home = self.ranking_to_elo(home_ranking)
+        elo_away = self.ranking_to_elo(away_ranking)
 
         # Probabilité ELO de base
         p_home_base = 1 / (1 + 10 ** ((elo_away - elo_home) / 400))
 
-        # Ajustements
-        adj_surface_h = self.surface_adjustment(fixture.get("home_surface_winrate", 0.5))
-        adj_surface_a = self.surface_adjustment(fixture.get("away_surface_winrate", 0.5))
+        # Surface winrate : fixture OU lookup TENNIS_SURFACE_BONUS (option C)
+        home_wr = fixture.get("home_surface_winrate") or self._get_surface_winrate(home, surface)
+        away_wr = fixture.get("away_surface_winrate") or self._get_surface_winrate(away, surface)
+
+        adj_surface_h = self.surface_adjustment(home_wr)
+        adj_surface_a = self.surface_adjustment(away_wr)
         form_home = self.form_score(fixture.get("home_form", []))
         form_away = self.form_score(fixture.get("away_form", []))
 
@@ -1046,16 +1295,18 @@ class TennisModel:
         p_home_adj = min(0.95, max(0.05, p_home_adj))
 
         return {
-            "sport":      "Tennis",
-            "fixture":    fixture,
-            "surface":    surface,
-            "elo_home":   round(elo_home, 1),
-            "elo_away":   round(elo_away, 1),
-            "form_home":  form_home,
-            "form_away":  form_away,
-            "h2h_adj":    h2h_adj,
-            "p_home_win": round(p_home_adj, 4),
-            "p_away_win": round(1 - p_home_adj, 4),
+            "sport":         "Tennis",
+            "fixture":       fixture,
+            "surface":       surface,
+            "elo_home":      round(elo_home, 1),
+            "elo_away":      round(elo_away, 1),
+            "ranking_home":  home_ranking,
+            "ranking_away":  away_ranking,
+            "form_home":     form_home,
+            "form_away":     form_away,
+            "h2h_adj":       h2h_adj,
+            "p_home_win":    round(p_home_adj, 4),
+            "p_away_win":    round(1 - p_home_adj, 4),
         }
 
 
@@ -1950,6 +2201,8 @@ def run_pipeline() -> Tuple[List[dict], str]:
         # Récupérer les fixtures et classements football
         team_stats: Dict[str, dict] = {}
         league_avg_goals_map: Dict[str, float] = {}  # Moyenne buts par ligue
+        # Option C : cache des résultats récents TheSportsDB par code ligue
+        recent_results_cache: Dict[str, list] = {}
         real_fixtures = []
 
         for code in FOOTBALL_COMPETITIONS:
@@ -1972,6 +2225,17 @@ def run_pipeline() -> Tuple[List[dict], str]:
                         "matches":      entry["played"],
                         "league_code":  code,
                     }
+
+            # Option C : récupérer la forme récente depuis TheSportsDB
+            tsdb_id = THESPORTSDB_LEAGUES.get(code)
+            if tsdb_id:
+                recent = fetcher.fetch_thesportsdb_recent_results(tsdb_id)
+                recent_results_cache[code] = recent
+                logger.info(
+                    f"  ↳ TheSportsDB {FOOTBALL_COMPETITIONS.get(code, code)} : "
+                    f"{len(recent)} matchs récents"
+                )
+
             real_fixtures.extend(fixtures)
 
         # Enrichir les fixtures avec la moyenne de buts de leur ligue
@@ -1989,6 +2253,14 @@ def run_pipeline() -> Tuple[List[dict], str]:
                 league_code = home_s.get("league_code", "")
                 fix["league_avg_goals"] = league_avg_goals_map.get(league_code)
                 fix["league_code"] = league_code  # R3 : nécessaire pour le rho par ligue
+                # Option C : injecter la forme récente TheSportsDB dans le fixture
+                recent_results = recent_results_cache.get(league_code, [])
+                fix["recent_home_stats"] = fetcher.compute_team_recent_stats(
+                    recent_results, fix["home"]
+                )
+                fix["recent_away_stats"] = fetcher.compute_team_recent_stats(
+                    recent_results, fix["away"]
+                )
                 data["football"].append(fix)
 
         if not data["football"]:
@@ -2054,20 +2326,40 @@ def run_pipeline() -> Tuple[List[dict], str]:
             "(exécutez nba_elo_bootstrap.py pour activer)"
         )
 
-    # Tennis : uniquement en mode démo (pas de flux temps réel disponible)
-    if is_demo:
+    # Option C : Tennis en mode réel via The Odds API + ATP_RANKINGS + TENNIS_SURFACE_BONUS
+    # En mode démo, utiliser les fixtures simulées
+    tennis_fixtures_real: List[dict] = []
+    if not is_demo:
+        tennis_fixtures_real = fetcher.fetch_tennis_fixtures_real(all_odds)
+
+    if tennis_fixtures_real:
+        # Fusion dans data["tennis"] pour backtesting/export
+        data["tennis"] = tennis_fixtures_real
+        for fixture in tennis_fixtures_real:
+            try:
+                pred = tennis_model.predict(fixture)
+                tennis_predictions.append(pred)
+                logger.info(
+                    f"  ↳ [Tennis réel] {fixture['home']} (#{pred.get('ranking_home', '?')}) "
+                    f"vs {fixture['away']} (#{pred.get('ranking_away', '?')}) | "
+                    f"Surface : {fixture.get('surface', '?')} | "
+                    f"P(home) : {pred['p_home_win']*100:.0f}%"
+                )
+            except Exception as e:
+                logger.warning(f"  ↳ Erreur tennis réel ({fixture.get('home', '?')}) : {e}")
+    elif is_demo:
         for fixture in data.get("tennis", []):
             try:
                 pred = tennis_model.predict(fixture)
                 tennis_predictions.append(pred)
                 logger.info(
-                    f"  ↳ [Tennis] {fixture['home']} vs {fixture['away']} | "
+                    f"  ↳ [Tennis démo] {fixture['home']} vs {fixture['away']} | "
                     f"P(home) : {pred['p_home_win']*100:.0f}%"
                 )
             except Exception as e:
-                logger.warning(f"  ↳ Erreur tennis : {e}")
+                logger.warning(f"  ↳ Erreur tennis démo : {e}")
     else:
-        logger.info("  ↳ Tennis désactivé en mode réel (pas de données temps réel)")
+        logger.info("  ↳ Tennis : aucun tournoi actif détecté aujourd'hui")
 
     # ── 4. Extraction des value bets ─────────────────────────────
     logger.info("💎 Étape 4/5 : Identification des value bets…")
