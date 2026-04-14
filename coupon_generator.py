@@ -683,6 +683,97 @@ class DataFetcher:
             "matches":      len(gf),
         }
 
+    # ── Option C : Forme récente tennis via RapidAPI Tennis ────────
+
+    def _fetch_tennis_form_rapidapi(self, player_name: str) -> List[int]:
+        """
+        Récupère la forme récente d'un joueur de tennis via RapidAPI Tennis.
+
+        Réutilise API_FOOTBALL_KEY (même compte RapidAPI) avec le host
+        api-tennis.p.rapidapi.com.
+
+        Args:
+            player_name: Nom du joueur (ex: "Carlos Alcaraz").
+
+        Returns:
+            Liste [1, 0, 1, ...] (1=victoire, 0=défaite), plus récent en premier.
+            Retourne [] si l'API échoue (fallback : form_score([]) = 0.0).
+        """
+        api_key = API_KEYS.get("api_football", "")
+        if not api_key:
+            logger.debug(f"  ↳ RapidAPI Tennis [{player_name}] : clé absente, forme ignorée")
+            return []
+
+        base = ENDPOINTS.get("tennis_rapidapi", "https://api-tennis.p.rapidapi.com")
+        host = ENDPOINTS.get("rapidapi_tennis_host", "api-tennis.p.rapidapi.com")
+        headers = {
+            "X-RapidAPI-Key":  api_key,
+            "X-RapidAPI-Host": host,
+        }
+
+        try:
+            # 1. Rechercher le joueur par nom
+            data = self._get(
+                f"{base}/players",
+                headers=headers,
+                params={"search": player_name},
+                api_name="tennis_rapidapi",
+            )
+            players = (data or {}).get("result") or []
+            if not players:
+                logger.debug(f"  ↳ RapidAPI Tennis : joueur introuvable ({player_name})")
+                return []
+
+            player_id = players[0].get("player_key") or players[0].get("id")
+            if not player_id:
+                logger.debug(f"  ↳ RapidAPI Tennis : ID introuvable ({player_name})")
+                return []
+
+            # 2. Récupérer les matchs de la saison en cours
+            season = datetime.now().year
+            data = self._get(
+                f"{base}/games",
+                headers=headers,
+                params={"player_id": str(player_id), "season": str(season)},
+                api_name="tennis_rapidapi",
+            )
+            games = (data or {}).get("result") or []
+
+            # Filtrer les matchs terminés, trier du plus récent au plus ancien
+            finished = [
+                g for g in games
+                if (g.get("event_status") or "").lower() in (
+                    "finished", "ft", "completed", "atp"
+                )
+            ]
+            finished.sort(key=lambda g: g.get("event_date", ""), reverse=True)
+
+            form: List[int] = []
+            player_last = player_name.lower().split()[-1]
+
+            for game in finished[:10]:
+                home_team = (game.get("event_home_team") or "").lower()
+                winner    = (game.get("event_winner") or "").lower()
+                is_home   = player_last in home_team
+                if is_home:
+                    form.append(1 if winner in ("home", "1", "home team") else 0)
+                else:
+                    form.append(1 if winner in ("away", "2", "away team") else 0)
+
+            if form:
+                logger.info(
+                    f"  ↳ RapidAPI Tennis [{player_name}] : "
+                    f"{sum(form)}/{len(form)} victoires récentes"
+                )
+            else:
+                logger.debug(f"  ↳ RapidAPI Tennis [{player_name}] : aucun match terminé trouvé")
+
+            return form
+
+        except Exception as e:
+            logger.warning(f"  ↳ Erreur RapidAPI Tennis [{player_name}] : {e}")
+            return []
+
     # ── Option C : Fixtures tennis réels via The Odds API ──────────
 
     def fetch_tennis_fixtures_real(
@@ -692,6 +783,7 @@ class DataFetcher:
         """
         Génère des fixtures tennis réels depuis les cotes The Odds API (option C).
         Détecte automatiquement les tournois actifs par date calendaire.
+        Enrichit chaque fixture avec la forme récente via RapidAPI Tennis.
 
         Args:
             all_odds: Résultat de fetch_all_odds() (peut contenir des clés tennis).
@@ -742,9 +834,11 @@ class DataFetcher:
                     "away":        away,
                     "surface":     surface,
                     "date":        self.today,
-                    # Incertitude modèle : sans stats individuelles → minimum
                     "home_matches": 20,
                     "away_matches": 20,
+                    # Forme récente via RapidAPI Tennis (fallback [] si indispo)
+                    "home_form":   self._fetch_tennis_form_rapidapi(home),
+                    "away_form":   self._fetch_tennis_form_rapidapi(away),
                 })
                 match_id += 1
 

@@ -26,11 +26,14 @@ API_KEYS = {
 
 # ─── ENDPOINTS API ────────────────────────────────────────────
 ENDPOINTS = {
-    "football_data_base": "https://api.football-data.org/v4",
-    "odds_api_base":      "https://api.the-odds-api.com/v4",
-    "thesportsdb_base":   "https://www.thesportsdb.com/api/v1/json/3",
-    "api_football_base":  "https://api-football-v1.p.rapidapi.com/v3",
-    "balldontlie_base":   "https://api.balldontlie.io/v1",
+    "football_data_base":   "https://api.football-data.org/v4",
+    "odds_api_base":        "https://api.the-odds-api.com/v4",
+    "thesportsdb_base":     "https://www.thesportsdb.com/api/v1/json/3",
+    "api_football_base":    "https://api-football-v1.p.rapidapi.com/v3",
+    "balldontlie_base":     "https://api.balldontlie.io/v1",
+    # RapidAPI Tennis — réutilise API_FOOTBALL_KEY (même compte RapidAPI)
+    "tennis_rapidapi":      "https://api-tennis.p.rapidapi.com",
+    "rapidapi_tennis_host": "api-tennis.p.rapidapi.com",
 }
 
 # ─── COMPÉTITIONS FOOTBALL À SURVEILLER ──────────────────────
