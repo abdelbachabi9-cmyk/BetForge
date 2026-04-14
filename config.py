@@ -142,10 +142,10 @@ POISSON_PARAMS = {
     # Seuil Over/Under buts
     "goals_threshold": 2.5,
     # Nombre minimum de matchs pour calculer la force d'une équipe
-    # FIX v6-final : remonté de 5 à 10 — 5 matchs donne des moyennes
-    # instables (variance trop élevée), 10 est le minimum recommandé
-    # pour des estimations fiables de force d'attaque/défense.
-    "min_matches": 10,
+    # FIX v8 : redescendu à 5 — 10 était trop strict en début de saison
+    # (août–oct) et causait un pipeline vide. 5 est un compromis acceptable :
+    # légère variance mais assez de données pour la distribution de Poisson.
+    "min_matches": 5,
     # R3 — Rho de correction des scores faibles (Dixon-Coles simplifié) PAR LIGUE
     # Valeurs empiriques issues de la littérature et ajustées par ligue :
     #   Ligues très défensives (SA, L1) : rho plus négatif
@@ -197,23 +197,28 @@ VALUE_BETTING = {
     "max_odd": 4.00,
     # Nombre cible de sélections dans le coupon
     "target_selections": 6,
-    # Nombre minimum de sélections
-    "min_selections": 4,
+    # Nombre minimum de sélections (mode dégradé : 3 si le pool est réduit)
+    # FIX v8 : réduit de 4 à 3 — évite de rejeter un coupon avec 3 bons paris
+    "min_selections": 3,
     # Nombre maximum de sélections
     "max_selections": 10,
     # Cote totale cible du coupon
     "target_total_odd": 5.0,
     # Fourchette acceptable de cote totale.
-    # FIX v4 : max_total_odd réduit de 15.0 à 8.0 — une cote de 15 n'a
-    # que ~6-7% de chance de passer, rendant la variance inacceptable.
+    # FIX v8 : max_total_odd relevé de 8.0 à 15.0 — avec min_selections=3 et
+    # des cotes individuelles typiques (1.5–3.5), le produit dépasse facilement 8.0.
+    # 8.0 provoquait un coupon systématiquement hors fourchette → inacceptable.
+    # Compromis : 15.0 (~6-7% de taux de réussite) reste raisonnable pour un
+    # coupon value-betting multi-sélections.
     "min_total_odd": 3.0,
-    "max_total_odd": 8.0,
+    "max_total_odd": 15.0,
     # R6 : Limite de sélections par ligue/compétition dans le coupon
     # Évite qu'un coupon contienne 6 matchs de Premier League par exemple.
     "max_per_league": 3,
-    # FIX v6-final : score de confiance minimum pour retenir un pari
-    # Élimine les prédictions peu fiables (basé sur Kelly + incertitude)
-    "min_confidence": 3.0,
+    # FIX v8 : score de confiance minimum abaissé de 3.0 à 2.0
+    # 3.0 était trop strict : avec incertitude sqrt(N/20), un match à 10 matchs
+    # et Kelly frac ~1.5% donnait confiance 2.1 → rejet injustifié.
+    "min_confidence": 2.0,
 }
 
 # ─── KELLY CRITERION ────────────────────────────────────────────
