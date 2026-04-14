@@ -1,0 +1,10 @@
+# ============================================================
+# requirements-dev.txt — Dépendances de développement / tests
+# ============================================================
+# Installation : pip install -r requirements-dev.txt
+# DEV-2 : séparé de requirements.txt (pas déployé sur Railway)
+# ============================================================
+
+# Tests
+pytest==8.2.2
+pytest-asyncio==0.23.7

@@ -120,6 +120,9 @@ try:
     _db = ApexDatabase()
     logger.info('✅ Module de persistance (SQLite) charge')
 except ImportError:
+    # DEV-4 : module optionnel — /history et /result désactivés sans database.py
+    logger.warning('⚠️  database.py introuvable — /history et /result désactivés. '
+                   'Placer database.py dans le même répertoire pour activer la persistance.')
     _db = None
 
 try:
@@ -128,6 +131,9 @@ try:
     if _backtester:
         logger.info('✅ Module de backtesting charge')
 except ImportError:
+    # DEV-4 : module optionnel — /stats désactivé sans backtester.py
+    logger.warning('⚠️  backtester.py introuvable — /stats désactivé. '
+                   'Placer backtester.py dans le même répertoire pour activer le backtesting.')
     _backtester = None
 
 # ââ Variables d'environnement âââââââââââââââââââââââââââââââââââââââââ
@@ -178,6 +184,12 @@ def _check_access(func):
 # FORMATAGE DU COUPON EN MARKDOWN TELEGRAM
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
+def _stars(confidence: float) -> str:
+    """QUA-7 : déplacé au niveau module — génère les étoiles de confiance (max 4)."""
+    count = min(4, max(1, int(round(confidence / 10 * 3))))
+    return "★" * count
+
+
 def _esc(text: str) -> str:
     """Ãchappe les caractÃ¨res spÃ©ciaux MarkdownV2 Telegram."""
     special = r"\_*[]()~`>#+-=|{}.!"
@@ -195,13 +207,6 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
     total_odd = round(
         functools.reduce(lambda x, y: x * y, [b["odd"] for b in coupon]), 2
     )
-
-    # FIX T7 : Suppression de esc() local — utilise _esc() global
-
-    def stars(confidence: float) -> str:
-        """Génère les étoiles de confiance (max 4 étoiles)."""
-        count = min(4, max(1, int(round(confidence / 10 * 3))))
-        return "★" * count
 
     sport_emoji = {
         "Football":   "⚽",
@@ -233,7 +238,7 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
             match_line = f"{emoji} {_esc(home)}"
 
         odd_str = f"{bet['odd']:.2f}"
-        bet_line = f"   {_esc(bet['bet_type'])} · {_esc(odd_str)} · {stars(bet['confidence'])}"
+        bet_line = f"   {_esc(bet['bet_type'])} · {_esc(odd_str)} · {_stars(bet['confidence'])}"
 
         lines.append(match_line)
         lines.append(bet_line)
@@ -294,9 +299,9 @@ async def cmd_coupon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     # GÃ©nÃ©ration dans un thread sÃ©parÃ© pour ne pas bloquer le bot
     loop = asyncio.get_running_loop()
     message = await loop.run_in_executor(None, generate_coupon_message)
-
-    if "Pas de matchs" in message:
-        logger.info("ð Aucun match aujourd'hui â notification envoyÃ©e")
+    # QUA-6 : detection etat coupon vide -- non localisee
+    if len(message) < 100:
+        logger.info("Aucun match disponible aujourd'hui")
 
     # Suppression du message d'attente
     await wait_msg.delete()
@@ -508,20 +513,20 @@ async def scheduled_coupon(context: ContextTypes.DEFAULT_TYPE) -> None:
         # DÃ©coupage si message trop long
         chunks = split_message(message)
         for chunk in chunks:
-                try:
-                    await context.bot.send_message(
-                        chat_id=TELEGRAM_CHAT_ID,
-                        text=chunk,
-                        parse_mode=ParseMode.MARKDOWN_V2
-                    )
-                except Exception as md_err:
-                    logger.warning(f"MarkdownV2 fallback : {md_err}")
-                    import re as _re
-                    plain = _re.sub(r'\\([_*\\[\\]()~`>#+=|{}.!\\-])', r'\\1', chunk)
-                    plain = plain.replace("*", "").replace("_", "")
-                    await context.bot.send_message(
-                        chat_id=TELEGRAM_CHAT_ID, text=plain
-                    )
+            # QUA-4/QUA-12: import re supprime (module-level) + indentation corrigee
+            try:
+                await context.bot.send_message(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    text=chunk,
+                    parse_mode=ParseMode.MARKDOWN_V2
+                )
+            except Exception as md_err:
+                logger.warning(f"MarkdownV2 fallback : {md_err}")
+                plain = re.sub(r'\([_*\[\]()~`>#+=|{}.!\-])', r'\1', chunk)
+                plain = plain.replace('*', '').replace('_', '')
+                await context.bot.send_message(
+                    chat_id=TELEGRAM_CHAT_ID, text=plain
+                )
         logger.info("â Coupon automatique envoyÃ© avec succÃ¨s")
     except Exception as e:
         logger.error(f"â Erreur envoi automatique : {e}", exc_info=True)

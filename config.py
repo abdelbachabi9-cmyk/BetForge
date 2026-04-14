@@ -44,7 +44,9 @@ FOOTBALL_COMPETITIONS = {
     "CL":  "Ligue des Champions",
 }
 
-# Mapping API-Football league IDs (api-football-v1.p.rapidapi.com)
+# QUA-10 : TODO — api-football (RapidAPI) n'est pas encore intégré dans coupon_generator.py.
+# Ce mapping sera utilisé quand fetch_stats_football() sera implémenté.
+# En attendant, les données stats tombent en fallback démo.
 API_FOOTBALL_LEAGUES = {
     61:  "Ligue 1",           # France
     39:  "Premier League",    # Angleterre
@@ -270,7 +272,9 @@ ELO_PARAMS.update({
 })
 
 # ─── MARCHÉS STATS (R9 — synchronisé depuis GitHub) ─────────────
-# Marchés statistiques football : corners, fautes, cartons, tirs, passes
+# MET-3 : TODO — StatsModel est déclaré dans coupon_generator.py mais
+# fetch_stats_football() n'est pas encore câblé dans run_pipeline().
+# Ces paramètres seront actifs quand l'intégration api-football sera terminée.
 STATS_MARKETS = {
     "corners": {
         "threshold":     9.5,       # Seuil Over/Under corners
@@ -322,7 +326,8 @@ DATABASE = {
 }
 
 # ─── LINE MOVEMENT (R9) ──────────────────────────────────────────
-# Suivi des mouvements de cotes pour détecter les sharp money
+# QUA-11 : TODO — line_movement.py non encore intégré. Ces paramètres seront
+# actifs quand le suivi des mouvements de cotes sera implémenté.
 LINE_MOVEMENT = {
     # Variation minimale de cote pour déclencher une alerte (%)
     "alert_threshold_pct": 5.0,
@@ -333,6 +338,8 @@ LINE_MOVEMENT = {
 }
 
 # ─── AFFICHAGE (R9) ──────────────────────────────────────────────
+# QUA-11 : TODO — DISPLAY non encore consommé dans bot.py (format_coupon_telegram
+# utilise ses propres constantes). À brancher lors d'une refonte du formatage.
 DISPLAY = {
     # Nombre maximum de sélections à afficher dans le message Telegram
     "max_selections_display": 10,

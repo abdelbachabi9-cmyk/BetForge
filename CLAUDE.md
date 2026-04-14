@@ -1,7 +1,7 @@
 # APEX Bot — Instructions pour Claude
 
 > **Dernière mise à jour :** 2026-04-14
-> **Version :** 2.1 (audit v5 implémenté)
+> **Version :** 2.2 (audit v6 implémenté)
 
 ---
 
@@ -10,7 +10,7 @@
 **APEX** est un bot Telegram de prédiction sportive quotidien (football, basketball, tennis). Il analyse les matchs du jour avec des modèles statistiques, identifie les value bets par rapport aux cotes du marché, et envoie un coupon optimisé aux utilisateurs.
 
 ### Stack technique
-- **Langage :** Python 3.10+
+- **Langage :** Python 3.9+ (3.12 recommandé — Railway déployé sur 3.12)
 - **Bot framework :** python-telegram-bot v21+ (async, job-queue via APScheduler)
 - **Calcul scientifique :** numpy, scipy (Poisson), pandas
 - **HTTP :** requests (sync, exécuté dans `run_in_executor`)
@@ -368,9 +368,9 @@ pip audit -r requirements.txt
 
 ## 9. Roadmap & dette technique
 
-### Corrections implémentées (PLAN_CORRECTION_V4.md + audit v5)
-- [x] T1 : Token masqué dans les logs (`_TokenMaskFilter`)
-- [x] T2 : Contrôle d'accès `ALLOWED_USERS`
+### Corrections implémentées (PLAN_CORRECTION_V4.md + audits v5 + v6)
+- [x] T1 : Token masqué dans les logs (`_TokenMaskFilter`, exc_info couvert — SEC-1 v6)
+- [x] T2 : Contrôle d'accès `ALLOWED_USERS` (warning démarrage — SEC-2/OBS-2 v6)
 - [ ] T3 : Régénérer le token Telegram (l'ancien est compromis — **action manuelle requise**)
 - [x] T4 : Correction inversion `p_home`/`p_away` dans `PoissonModel`
 - [x] T5 : Enregistrement des 7 commandes dans `post_init`
@@ -385,6 +385,18 @@ pip audit -r requirements.txt
 - [x] R7 : Thread-safety `PoissonModel` (paramètre `league_avg_goals` à `calculate_lambdas`)
 - [x] R8 : Marché Over/Under basketball (`_estimate_total_points`)
 - [x] R9 : Synchronisation config GitHub (`STATS_MARKETS`, `LEAGUE_HOME_ADVANTAGE`, etc.)
+- [x] v6-SEC-3 : Username supprimé du log d'accès refusé
+- [x] v6-ROB-1/MET-1 : `home_advantage` par ligue injecté dans les fixtures
+- [x] v6-ROB-2 : Sauvegarde atomique `BacktestTracker` (write-tmp + replace)
+- [x] v6-ROB-3 : `TTLCache` thread-safe via `threading.Lock`
+- [x] v6-ROB-4 : Fuzzy matching étendu aux deux équipes dans `_evaluate_bet`
+- [x] v6-ROB-6/PERF-3 : Fetch odds et fixtures parallélisés (ThreadPoolExecutor)
+- [x] v6-MET-2 : Fallback `LEAGUE_AVG_GOALS` quand standings vides
+- [x] v6-MET-4 : Seuil Over/Under NBA adaptatif (moyenne modèle + seuil naturel)
+- [x] v6-MET-6 : `ranking_to_elo` continuation lisse au-delà du rang 500
+- [x] v6-MET-7 : Limite 1 pari par match dans `select_best_bets`
+- [x] v6-OBS-1 : Health check HTTP pour Railway (port `$PORT`)
+- [x] v6-QUA-1..12 : Dead code, imports inutiles, docstrings, `_stars()` module-level
 
 ### Améliorations restantes
 1. **Bootstrap NBA** : Lancer `python nba_elo_bootstrap.py` pour activer le basketball en mode réel
@@ -398,6 +410,7 @@ pip audit -r requirements.txt
 - Le token Telegram compromis doit être régénéré via @BotFather (T3, action manuelle)
 - Désynchronisation entre copie locale et repo GitHub (`database.py`, `backtester.py` manquants en local)
 - Railway en trial limité — nécessite un upgrade pour la production
+- Tests dev : `pip install -r requirements-dev.txt` (séparé de requirements.txt — v6 DEV-2)
 
 ---
 

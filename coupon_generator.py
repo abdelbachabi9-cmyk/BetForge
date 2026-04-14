@@ -152,27 +152,34 @@ def normalize_team_name(name: str) -> str:
 # ══════════════════════════════════════════════════════════════════
 
 class TTLCache:
-    """Cache en mémoire simple avec TTL par clé."""
+    """Cache en mémoire simple avec TTL par clé.
+
+    ROB-3 : thread-safe via threading.Lock (accès concurrent ThreadPoolExecutor).
+    """
 
     def __init__(self):
         self._store: Dict[str, Tuple[float, Any]] = {}
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> Optional[Any]:
         """Retourne la valeur si elle existe et n'est pas expirée."""
-        if key in self._store:
-            expires_at, value = self._store[key]
-            if _time.time() < expires_at:
-                return value
-            del self._store[key]
-        return None
+        with self._lock:
+            if key in self._store:
+                expires_at, value = self._store[key]
+                if _time.time() < expires_at:
+                    return value
+                del self._store[key]
+            return None
 
     def set(self, key: str, value: Any, ttl: int) -> None:
         """Stocke une valeur avec un TTL en secondes."""
-        self._store[key] = (_time.time() + ttl, value)
+        with self._lock:
+            self._store[key] = (_time.time() + ttl, value)
 
     def clear(self) -> None:
         """Vide le cache."""
-        self._store.clear()
+        with self._lock:
+            self._store.clear()
 
 
 # Cache global
@@ -193,7 +200,6 @@ class DataFetcher:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "BetForge/2.0"})
-        self.tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         self.today = datetime.now().strftime("%Y-%m-%d")
         # Générateur aléatoire local (pas de state global)
         seed = int(datetime.now().strftime("%Y%m%d"))
@@ -224,7 +230,7 @@ class DataFetcher:
         """
         # Circuit breaker
         if self._is_api_broken(api_name):
-            logger.debug(f"API {api_name} en circuit-break — ignorée")
+            logger.warning(f"API {api_name} en circuit-break — ignorée")
             return None
 
         # Cache
@@ -281,7 +287,7 @@ class DataFetcher:
     # ── Football-data.org ──────────────────────────────────────────
 
     def fetch_football_fixtures(self, competition_code: str) -> List[dict]:
-        """Récupère les matchs de demain depuis football-data.org."""
+        """Récupère les matchs d'aujourd'hui depuis football-data.org."""
         if not API_KEYS.get("football_data"):
             return []
 
@@ -993,7 +999,8 @@ class TennisModel:
                 e1, e2 = self.RANKING_TO_ELO[r1], self.RANKING_TO_ELO[r2]
                 fraction = (ranking - r1) / (r2 - r1)
                 return e1 + fraction * (e2 - e1)
-        return max(1400, 2200 - ranking * 1.5)
+        # MET-6 : continuation lisse depuis le dernier point connu (500 → 1550, pente -0.25)
+        return max(1200, round(1550 - (ranking - 500) * 0.25, 1))
 
     @staticmethod
     def surface_adjustment(win_rate: float) -> float:
@@ -1750,7 +1757,7 @@ class BacktestTracker:
                 f"BacktestTracker : {updated_count} sélections mises à jour pour {date}"
             )
         else:
-            logger.debug(f"BacktestTracker : aucune mise à jour pour {date}")
+            logger.info(f"BacktestTracker : aucune mise à jour pour {date}")
 
         return updated_count
 
