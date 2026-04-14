@@ -1066,7 +1066,35 @@ class ValueBetSelector:
         self.min_value = VALUE_BETTING["min_value"]
         self.min_odd = VALUE_BETTING["min_odd"]
         self.max_odd = VALUE_BETTING["max_odd"]
+        # FIX v6-final : filtre de confiance minimum
+        self.min_confidence = VALUE_BETTING.get("min_confidence", 3.0)
         self._demo_odd_fn: Optional[Callable] = None
+
+    @staticmethod
+    def demarginalise_odds(odds_dict: Dict[str, float]) -> Dict[str, float]:
+        """
+        Démarginialise les cotes bookmaker pour obtenir les vraies probabilités
+        implicites. La marge du bookmaker gonfle la somme des probabilités
+        implicites au-delà de 100%. On la retire proportionnellement.
+
+        FIX v6-final : sans démarginalisation, on compare p_model à des
+        probabilités implicites biaisées (surestimées), ce qui sous-estime
+        la value réelle et rate des paris rentables.
+
+        Returns:
+            Dict de cotes « fair » (sans marge) par outcome.
+        """
+        if not odds_dict:
+            return odds_dict
+        # Somme des probabilités implicites brutes
+        implied_sum = sum(1.0 / odd for odd in odds_dict.values() if odd > 0)
+        if implied_sum <= 0:
+            return odds_dict
+        # Cotes fair = cote_brute × overround
+        return {
+            name: round(odd * implied_sum, 3)
+            for name, odd in odds_dict.items()
+        }
 
     @staticmethod
     def calculate_value(p_model: float, odd_book: float) -> float:
@@ -1127,14 +1155,17 @@ class ValueBetSelector:
                  market_key: str, outcome_name: str) -> Optional[float]:
         """
         Récupère la cote bookmaker réelle ou simule une cote indépendante.
+        FIX v6-final : démarginialise les cotes avant comparaison.
         Retourne None si la cote est hors fourchette.
         """
         odd = None
 
-        # 1. Essayer les vraies cotes API
+        # 1. Essayer les vraies cotes API (démarginalisées)
         if odds_data and "markets" in odds_data:
             mkt = odds_data["markets"].get(market_key, {})
-            odd = mkt.get(outcome_name)
+            if mkt:
+                fair_mkt = self.demarginalise_odds(mkt)
+                odd = fair_mkt.get(outcome_name)
 
         # 2. Fallback : simulation indépendante (pas circulaire)
         if odd is None and self._demo_odd_fn:
@@ -1174,6 +1205,12 @@ class ValueBetSelector:
                 continue
 
             stake = self.kelly_stake(p_model, odd)
+            confidence = self._confidence_score(p_model, value, odd,
+                                                matches_played=matches_played)
+
+            # FIX v6-final : filtrer les prédictions peu fiables
+            if confidence < self.min_confidence:
+                continue
 
             bets.append({
                 "id":          fix["id"],
@@ -1186,8 +1223,7 @@ class ValueBetSelector:
                 "p_model":     round(p_model * 100, 1),
                 "p_implied":   round((1 / odd) * 100, 1),
                 "value":       round(value * 100, 2),
-                "confidence":  self._confidence_score(p_model, value, odd,
-                                                       matches_played=matches_played),
+                "confidence":  confidence,
                 "kelly_stake": stake,
             })
 
@@ -1281,6 +1317,8 @@ class CouponBuilder:
 
     def __init__(self):
         self.target = VALUE_BETTING["target_selections"]
+        # FIX v6-final : min_selections lu depuis config
+        self.min_selections = VALUE_BETTING.get("min_selections", 4)
         self.min_total = VALUE_BETTING["min_total_odd"]
         self.max_total = VALUE_BETTING["max_total_odd"]
         self.target_odd = VALUE_BETTING["target_total_odd"]
@@ -1313,31 +1351,55 @@ class CouponBuilder:
         """
         Construit le coupon optimal via recherche combinatoire bornée.
         Limite à C(15, target) pour éviter l'explosion.
+
+        FIX v6-final :
+        - Respecte min_selections (par défaut 4) depuis config.py
+        - Retourne [] (pas de coupon) plutôt qu'un coupon incomplet
+          si moins de min_selections candidats disponibles
+        - Essaie les tailles de target_size à min_selections pour
+          trouver le meilleur coupon possible
         """
         if not candidates:
             logger.warning("Aucun pari valide trouvé — coupon vide")
             return []
 
+        # FIX v6-final : vérifier qu'on a assez de candidats
+        if len(candidates) < self.min_selections:
+            logger.warning(
+                f"Seulement {len(candidates)} candidats disponibles, "
+                f"minimum requis : {self.min_selections} — pas de coupon"
+            )
+            return []
+
         pool = candidates[:min(len(candidates), 15)]
         target_size = min(self.target, len(pool))
+        # Ne jamais descendre en dessous de min_selections
+        target_size = max(target_size, self.min_selections)
 
         best_coupon = []
         best_distance = float("inf")
 
-        for combo in combinations(pool, target_size):
-            combo_list = list(combo)
-            # R6 : ignorer les combinaisons qui violent la diversification
-            if not self._is_diversified(combo_list, self.max_per_league):
-                continue
-            total = self.total_odd(combo_list)
-            dist = abs(total - self.target_odd)
-            if self.min_total <= total <= self.max_total:
-                dist -= 0.5  # Bonus si dans la fourchette
-            if dist < best_distance:
-                best_distance = dist
-                best_coupon = combo_list
+        # FIX v6-final : essayer aussi des tailles plus petites
+        # jusqu'à min_selections si target_size ne donne rien
+        for size in range(target_size, self.min_selections - 1, -1):
+            for combo in combinations(pool, size):
+                combo_list = list(combo)
+                # R6 : ignorer les combinaisons qui violent la diversification
+                if not self._is_diversified(combo_list, self.max_per_league):
+                    continue
+                total = self.total_odd(combo_list)
+                dist = abs(total - self.target_odd)
+                if self.min_total <= total <= self.max_total:
+                    dist -= 0.5  # Bonus si dans la fourchette
+                if dist < best_distance:
+                    best_distance = dist
+                    best_coupon = combo_list
+            # Si on a trouvé un bon coupon à cette taille, on s'arrête
+            if best_coupon:
+                break
 
         if not best_coupon:
+            # Fallback : prendre les meilleurs candidats
             best_coupon = candidates[:target_size]
 
         # Ajustement fin
@@ -1353,7 +1415,7 @@ class CouponBuilder:
                 )
                 coupon.append(best_add)
 
-        elif total > self.max_total and len(coupon) > 2:
+        elif total > self.max_total and len(coupon) > self.min_selections:
             riskiest = min(coupon, key=lambda x: x["p_model"])
             alternatives = [
                 b for b in candidates
@@ -1369,6 +1431,14 @@ class CouponBuilder:
                 )
                 coupon.remove(riskiest)
                 coupon.append(best_swap)
+
+        # FIX v6-final : vérification finale — jamais moins de min_selections
+        if len(coupon) < self.min_selections:
+            logger.warning(
+                f"Coupon final n'a que {len(coupon)} sélections "
+                f"(minimum : {self.min_selections}) — pas de coupon"
+            )
+            return []
 
         return coupon
 

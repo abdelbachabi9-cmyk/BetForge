@@ -142,7 +142,10 @@ POISSON_PARAMS = {
     # Seuil Over/Under buts
     "goals_threshold": 2.5,
     # Nombre minimum de matchs pour calculer la force d'une équipe
-    "min_matches": 5,
+    # FIX v6-final : remonté de 5 à 10 — 5 matchs donne des moyennes
+    # instables (variance trop élevée), 10 est le minimum recommandé
+    # pour des estimations fiables de force d'attaque/défense.
+    "min_matches": 10,
     # R3 — Rho de correction des scores faibles (Dixon-Coles simplifié) PAR LIGUE
     # Valeurs empiriques issues de la littérature et ajustées par ligue :
     #   Ligues très défensives (SA, L1) : rho plus négatif
@@ -208,6 +211,9 @@ VALUE_BETTING = {
     # R6 : Limite de sélections par ligue/compétition dans le coupon
     # Évite qu'un coupon contienne 6 matchs de Premier League par exemple.
     "max_per_league": 3,
+    # FIX v6-final : score de confiance minimum pour retenir un pari
+    # Élimine les prédictions peu fiables (basé sur Kelly + incertitude)
+    "min_confidence": 3.0,
 }
 
 # ─── KELLY CRITERION ────────────────────────────────────────────
