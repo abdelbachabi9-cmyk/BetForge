@@ -326,9 +326,11 @@ VALUE_BETTING = {
     "max_odd": 4.00,
     # Nombre cible de sélections dans le coupon
     "target_selections": 6,
-    # Nombre minimum de sélections (mode dégradé : 3 si le pool est réduit)
-    # FIX v8 : réduit de 4 à 3 — évite de rejeter un coupon avec 3 bons paris
-    "min_selections": 3,
+    # Nombre minimum de sélections (mode dégradé : 2 si le pool est très réduit)
+    # FIX v9 : réduit de 3 à 2 — quand football-data est saturé (quota 429),
+    # on peut n'avoir que 2 value bets viables. Rejeter un coupon à 2 paris
+    # solides est contre-productif ; le fallback démo prend le relais sous 2.
+    "min_selections": 2,
     # Nombre maximum de sélections
     "max_selections": 10,
     # Cote totale cible du coupon

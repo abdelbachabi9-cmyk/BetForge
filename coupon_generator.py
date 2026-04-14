@@ -84,7 +84,7 @@ except ImportError:
         "min_value": 0.05, "min_odd": 1.30, "max_odd": 4.00,
         "target_selections": 6, "target_total_odd": 5.0,
         "min_total_odd": 3.0, "max_total_odd": 8.0,
-        "min_selections": 4, "max_selections": 10,
+        "min_selections": 2, "max_selections": 10,
         "max_per_league": 3, "min_confidence": 3.0,
     }
     KELLY = {"fraction": 0.25, "max_stake_pct": 5.0}
@@ -170,6 +170,17 @@ class TTLCache:
         """Stocke une valeur avec un TTL en secondes."""
         self._store[key] = (_time.time() + ttl, value)
 
+    def get_stale(self, key: str) -> Optional[Any]:
+        """
+        Retourne la valeur en cache même si son TTL est expiré.
+        Utilisé en dernier recours (ex: quota API 429) pour éviter
+        de retourner None quand une réponse ancienne reste utilisable.
+        """
+        if key in self._store:
+            _, value = self._store[key]
+            return value
+        return None
+
     def clear(self) -> None:
         """Vide le cache."""
         self._store.clear()
@@ -250,6 +261,12 @@ class DataFetcher:
                     return data
                 elif resp.status_code == 429:
                     logger.warning(f"Quota API dépassé ({api_name})")
+                    # FIX v9 : avant de marquer l'API broken, essayer le cache périmé.
+                    # Un résultat de la veille est préférable à aucune donnée.
+                    stale = _cache.get_stale(cache_key)
+                    if stale is not None:
+                        logger.info(f"  ↳ Cache périmé utilisé pour {api_name} (quota épuisé)")
+                        return stale
                     self._mark_api_broken(api_name)
                     return None
                 else:
@@ -2515,13 +2532,17 @@ def run_pipeline() -> Tuple[List[dict], str]:
         f"  ↳ {len(all_bets)} paris candidats → {len(best_bets)} retenus"
     )
 
-    # FIX v8 — Dernier recours : si aucun pari viable en mode réel (ex: fixtures
-    # trouvés mais cotes non matchées), relancer complètement en mode démo.
-    # Ce cas n'était pas couvert par le fallback fixture-level de l'étape 1.
-    if not best_bets and not is_demo:
+    # FIX v9 — Dernier recours : si pas assez de paris viables en mode réel.
+    # Couvre deux cas :
+    #   a) best_bets vide : aucun value bet extrait (cotes non matchées)
+    #   b) best_bets < min_selections : CouponBuilder.build() rejetterait le coupon
+    #      (ex: quota football-data épuisé → seulement 2 matchs → 2 value bets)
+    # Le fallback démo garantit toujours un coupon complet à l'utilisateur.
+    _min_sel = VALUE_BETTING.get("min_selections", 2)
+    if not is_demo and len(best_bets) < _min_sel:
         logger.warning(
-            "  ↳ Aucun value bet en mode réel (cotes non matchées ?) "
-            "— relance complète en mode démo"
+            f"  ↳ Seulement {len(best_bets)} value bet(s) en mode réel "
+            f"(minimum requis : {_min_sel}) — basculement mode démo"
         )
         demo_data = fetcher.get_demo_data()
         is_demo = True
