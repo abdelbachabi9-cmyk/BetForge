@@ -28,7 +28,9 @@ import sys
 import logging
 import asyncio
 import functools
+import threading
 from datetime import datetime, timedelta, time as dt_time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from zoneinfo import ZoneInfo
 
 # ââ BibliothÃ¨ques Telegram ââââââââââââââââââââââââââââââââââââââââââââ
@@ -47,28 +49,14 @@ except ImportError:
 # ââ Import du moteur APEX âââââââââââââââââââââââââââââââââââââââââââââ
 try:
     from coupon_generator import run_pipeline
-    from config import DEMO_MODE as CONFIG_DEMO_MODE
+    # QUA-2 : CONFIG_DEMO_MODE supprime (jamais utilise)
 except ImportError as e:
     print(f"â Impossible d'importer coupon_generator.py : {e}")
     sys.exit(1)
 
-# ── [v2.0] Import des modules de persistance et backtesting ──────────
-try:
-    from database import ApexDatabase
-    _db = ApexDatabase()
-    logger_init = logging.getLogger("APEX-Bot")
-    logger_init.info("✅ Module de persistance (SQLite) chargé")
-except ImportError:
-    _db = None
-
-try:
-    from backtester import ApexBacktester
-    _backtester = ApexBacktester(_db) if _db else None
-    if _backtester:
-        logger_init = logging.getLogger("APEX-Bot")
-        logger_init.info("✅ Module de backtesting chargé")
-except ImportError:
-    _backtester = None
+# QUA-1 : _db/_backtester initialises APRES le setup logging (voir apres la config du logger)
+_db = None
+_backtester = None
 
 
 # ââ Configuration du logger âââââââââââââââââââââââââââââââââââââââââââ
@@ -89,7 +77,11 @@ logging.getLogger("telegram.ext._updater").setLevel(logging.WARNING)
 _TOKEN_PATTERN = re.compile(r"\d{8,}:[A-Za-z0-9_-]{30,}")
 
 class _TokenMaskFilter(logging.Filter):
-    """Masque tout token Telegram (format 123456:ABC...) dans les messages de log."""
+    """Masque tout token Telegram (format 123456:ABC...) dans les messages de log.
+
+    SEC-1 : couvre msg, args ET exc_info/exc_text pour éviter les fuites
+    dans les tracebacks d'exceptions (ex : InvalidToken).
+    """
     def filter(self, record: logging.LogRecord) -> bool:
         if record.msg and isinstance(record.msg, str):
             record.msg = _TOKEN_PATTERN.sub("***MASKED***", record.msg)
@@ -105,12 +97,38 @@ class _TokenMaskFilter(logging.Filter):
                     _TOKEN_PATTERN.sub("***MASKED***", str(a)) if isinstance(a, str) else a
                     for a in record.args
                 )
+        # SEC-1 : masquer les tracebacks d'exceptions (exc_info → exc_text)
+        if record.exc_text and isinstance(record.exc_text, str):
+            record.exc_text = _TOKEN_PATTERN.sub("***MASKED***", record.exc_text)
+        if record.exc_info:
+            # Formater le traceback maintenant pour pouvoir le masquer
+            if not record.exc_text:
+                record.exc_text = logging.Formatter().formatException(record.exc_info)
+            record.exc_text = _TOKEN_PATTERN.sub("***MASKED***", record.exc_text)
+            record.exc_info = None  # Éviter le re-formatage par le handler
         return True
 
 # Appliquer le filtre à TOUS les loggers (root logger)
 logging.getLogger().addFilter(_TokenMaskFilter())
 
 logger = logging.getLogger("APEX-Bot")
+
+# [v2.0] Import des modules de persistance et backtesting
+# QUA-1 : initialises ICI, apres le setup complet du logging + filtres
+try:
+    from database import ApexDatabase
+    _db = ApexDatabase()
+    logger.info('✅ Module de persistance (SQLite) charge')
+except ImportError:
+    _db = None
+
+try:
+    from backtester import ApexBacktester
+    _backtester = ApexBacktester(_db) if _db else None
+    if _backtester:
+        logger.info('✅ Module de backtesting charge')
+except ImportError:
+    _backtester = None
 
 # ââ Variables d'environnement âââââââââââââââââââââââââââââââââââââââââ
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
@@ -147,19 +165,13 @@ def _check_access(func):
     @functools.wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ALLOWED_USERS and update.effective_user.id not in ALLOWED_USERS:
-            logger.warning(
-                f"Accès refusé pour user_id={update.effective_user.id} "
-                f"(@{update.effective_user.username})"
-            )
+            # SEC-3 : logger uniquement l'ID (pas le username — données personnelles RGPD)
+            logger.warning(f"Accès refusé pour user_id={update.effective_user.id}")
             await update.message.reply_text("⛔ Accès non autorisé.")
             return
         return await func(update, context)
     return wrapper
-try:
-    import coupon_generator
-    coupon_generator.DEMO_MODE = DEMO_MODE
-except ImportError:
-    pass
+# coupon_generator.DEMO_MODE synchronise via import config ci-dessus
 
 
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -575,6 +587,29 @@ async def post_init(application: Application) -> None:
 # POINT D'ENTRÃE PRINCIPAL
 # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
+def _start_health_server() -> None:
+    """OBS-1 : Demarre un serveur HTTP de health check en arriere-plan.
+
+    Railway utilise ce endpoint pour detecter les crashs et redemarrer le process.
+    Port : variable d'environnement PORT (Railway l'injecte automatiquement), defaut 8080.
+    Repond 200 OK sur GET / -- aucune information sensible exposee.
+    """
+    class _HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+
+        def log_message(self, fmt: str, *args) -> None:  # type: ignore[override]
+            pass  # Silencieux -- evite les logs HTTP parasites
+
+    port = int(os.getenv("PORT", "8080"))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    logger.info(f"Health check HTTP demarre sur le port {port}")
+    server.serve_forever()
+
+
 def main() -> None:
     """Lance le bot Telegram APEX."""
 
@@ -594,6 +629,23 @@ def main() -> None:
     logger.info("â" * 55)
 
     # ââ Construction de l'application ââââââââââââââââââââââââââââ
+    # OBS-1 : demarrer le health check HTTP (Railway detecte les crashs)
+    threading.Thread(target=_start_health_server, daemon=True, name='health').start()
+
+    # SEC-2 : avertir si le bot est ouvert a tous
+    from config import ALLOWED_USERS as _au
+    if not _au:
+        logger.warning(
+            '⚠️ ALLOWED_USERS non defini -- bot ouvert a tous les utilisateurs'
+        )
+
+    # OBS-2 : avertir si des cles API manquantes en mode reel
+    from config import API_KEYS as _ak
+    if not DEMO_MODE:
+        missing = [k for k, v in _ak.items() if not v and k != 'balldontlie']
+        if missing:
+            logger.warning(f'⚠️ Cles API manquantes : {missing} -- fallback demo possible')
+
     application = (
         Application.builder()
         .token(TELEGRAM_TOKEN)

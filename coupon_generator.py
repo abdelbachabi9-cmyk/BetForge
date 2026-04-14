@@ -31,8 +31,10 @@ import os
 import re
 import random
 import logging
+import threading
 import time as _time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from functools import reduce
 from itertools import combinations
@@ -103,13 +105,15 @@ logger = logging.getLogger("APEX-Engine")
 # ══════════════════════════════════════════════════════════════════
 
 # Suffixes géographiques et de forme juridique à supprimer pour le matching
+# QUA-9 FIX : ne garder que les suffixes vraiment génériques (forme juridique /
+# qualificatif géographique NON DISTINCTIF). Retrait de " united", " city",
+# " town", " rovers", " wanderers", " athletic", " albion", " hotspur",
+# " county", " palace" — ces termes font partie intégrante du nom de l'équipe
+# (ex : "Manchester United" → "manchester" était ERRONÉ).
 _TEAM_SUFFIXES = [
     " fc", " cf", " sc", " ac", " as", " ss", " afc", " bsc", " rsc",
-    " london", " madrid", " munich", " münchen", " milano", " milan",
+    " london", " madrid", " munich", " münchen", " milano",
     " de marseille", " saint-germain",
-    " united", " city", " town", " rovers",
-    " wanderers", " athletic", " albion",
-    " hotspur", " county", " palace",
 ]
 
 
@@ -387,12 +391,25 @@ class DataFetcher:
         return odds_list
 
     def fetch_all_odds(self) -> Dict[str, List[dict]]:
-        """Récupère les cotes pour tous les sports configurés."""
-        all_odds = {}
-        for sport_key in ODDS_SPORTS:
-            odds = self.fetch_odds(sport_key)
-            if odds:
-                all_odds[sport_key] = odds
+        """Récupère les cotes pour tous les sports configurés en parallèle (PERF-3/ROB-6).
+
+        Utilise ThreadPoolExecutor pour paralléliser les appels aux différents endpoints.
+        requests.Session et le cache TTL sont thread-safe (GIL + dict atomiques).
+        """
+        all_odds: Dict[str, List[dict]] = {}
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="odds") as executor:
+            futures = {
+                executor.submit(self.fetch_odds, sport_key): sport_key
+                for sport_key in ODDS_SPORTS
+            }
+            for future in as_completed(futures):
+                sport_key = futures[future]
+                try:
+                    odds = future.result()
+                    if odds:
+                        all_odds[sport_key] = odds
+                except Exception as e:
+                    logger.warning(f"Erreur fetch_odds {sport_key} : {e}")
         return all_odds
 
     # ── TheSportsDB (multi-sports) ──────────────────────────────────
@@ -894,8 +911,10 @@ class EloModel:
         away_exp = away_ppg * tempo_factor
         total_expected = home_exp + away_exp
 
-        # Seuil Over/Under NBA typique (lignes bookmaker) ≈ moyenne ± 5
-        threshold = nba_avg_total
+        # MET-4 : seuil Over/Under = moyenne pondérée entre la ligue NBA et les équipes
+        # Évite le biais systématique "over" pour des équipes à ppg élevé vs seuil fixe.
+        natural_threshold = home_ppg + away_ppg  # Total naturel des deux équipes
+        threshold = (nba_avg_total + natural_threshold) / 2.0  # Pondération 50/50
         # P(Over) via sigmoïde sur l'écart attendu/seuil
         # diff > 0 → total attendu > seuil → over probable
         diff_normalized = (total_expected - threshold) / 10.0  # normalisation
@@ -1256,22 +1275,19 @@ class ValueBetSelector:
         """
         sorted_bets = sorted(all_bets, key=lambda x: x["value"], reverse=True)
         selected = []
-        used_ids: Dict[int, List[str]] = {}
-
-        incompatible_groups = {"h2h", "totals", "btts", "winner", "match_winner"}
+        # MET-7 : 1 pari par match — évite les paris corrélés sur le même match
+        # qui gonflent artificiellement la cote sans réduire la corrélation réelle.
+        used_match_ids: set = set()
 
         for bet in sorted_bets:
             match_id = bet["id"]
-            market = bet["market"]
 
-            if match_id not in used_ids:
-                used_ids[match_id] = []
-
-            if market in used_ids[match_id]:
-                continue  # Même marché du même match déjà pris
+            # Ignorer les matchs déjà représentés dans la sélection
+            if match_id in used_match_ids:
+                continue
 
             selected.append(bet)
-            used_ids[match_id].append(market)
+            used_match_ids.add(match_id)
 
         return selected
 
@@ -1491,12 +1507,21 @@ class BacktestTracker:
         return self._history
 
     def _save(self) -> None:
-        """Sauvegarde l'historique dans le fichier JSON."""
-        if self._history is not None:
-            self.history_file.write_text(
+        """Sauvegarde l'historique dans le fichier JSON (écriture atomique — ROB-2).
+
+        Utilise un fichier temporaire + rename pour éviter la corruption en cas de crash.
+        """
+        if self._history is None:
+            return
+        tmp = self.history_file.with_suffix(".tmp")
+        try:
+            tmp.write_text(
                 json.dumps(self._history, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
+            tmp.replace(self.history_file)  # Atomique sur la plupart des OS
+        except OSError as e:
+            logger.warning(f"Erreur sauvegarde historique backtest : {e}")
 
     def record_coupon(self, coupon: List[dict], date: str,
                       is_demo: bool = False) -> None:
@@ -1610,11 +1635,15 @@ class BacktestTracker:
         market = bet.get("market", "")
         bet_type = bet.get("bet_type", "")
 
-        # Chercher le résultat avec matching fuzzy
+        # ROB-4 : matching fuzzy corrigé — vérifier BEIDE équipes pour éviter les
+        # faux positifs (ex : "Roma" matchant "Oklahoma City vs Sacramento")
         result = None
+        match_key_norm = normalize_team_name(match_key)
         for key, res in results_map.items():
+            home_norm = normalize_team_name(res["home"])
+            away_norm = normalize_team_name(res["away"])
             if match_key == key or (
-                normalize_team_name(res["home"]) in normalize_team_name(match_key)
+                home_norm in match_key_norm and away_norm in match_key_norm
             ):
                 result = res
                 break
@@ -1886,37 +1915,50 @@ def run_pipeline() -> Tuple[List[dict], str]:
         league_avg_goals_map: Dict[str, float] = {}  # Moyenne buts par ligue
         real_fixtures = []
 
-        for code in FOOTBALL_COMPETITIONS:
-            fixtures = fetcher.fetch_football_fixtures(code)
-            standings = fetcher.fetch_football_standings(code)
+        # ROB-6 : parallélisation des appels fixtures + standings par compétition
+        def _fetch_competition(code: str):
+            """Récupère fixtures + standings d'une compétition (exécuté en parallèle)."""
+            return code, fetcher.fetch_football_fixtures(code), fetcher.fetch_football_standings(code)
 
-            # Calculer la moyenne de buts dynamique pour cette ligue
-            total_goals = sum(e["goals_for"] for e in standings if e["played"] > 0)
-            total_matches = sum(e["played"] for e in standings if e["played"] > 0) / 2
-            if total_matches > 0:
-                league_avg = total_goals / total_matches
-                league_avg_goals_map[code] = round(league_avg, 2)
-                logger.info(f"  ↳ {FOOTBALL_COMPETITIONS.get(code, code)} : {league_avg:.2f} buts/match")
-            else:
-                # MET-2 : fallback sur les valeurs de référence par ligue (LEAGUE_AVG_GOALS)
-                fallback_avg = LEAGUE_AVG_GOALS.get(
-                    code, POISSON_PARAMS.get("default_league_avg_goals", 2.65)
-                )
-                league_avg_goals_map[code] = fallback_avg
-                logger.debug(
-                    f"  ↳ {FOOTBALL_COMPETITIONS.get(code, code)} : "
-                    f"pas de standings — fallback {fallback_avg:.2f} buts/match"
-                )
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="football") as executor:
+            futures = {
+                executor.submit(_fetch_competition, code): code
+                for code in FOOTBALL_COMPETITIONS
+            }
+            for future in as_completed(futures):
+                try:
+                    code, fixtures, standings = future.result()
+                except Exception as e:
+                    logger.warning(f"  ↳ Erreur fetch compétition : {e}")
+                    continue
 
-            for entry in standings:
-                if entry["played"] >= POISSON_PARAMS["min_matches"]:
-                    team_stats[entry["team"]] = {
-                        "goals_avg":    entry["goals_for"] / entry["played"],
-                        "conceded_avg": entry["goals_against"] / entry["played"],
-                        "matches":      entry["played"],
-                        "league_code":  code,
-                    }
-            real_fixtures.extend(fixtures)
+                # Calculer la moyenne de buts dynamique pour cette ligue
+                total_goals = sum(e["goals_for"] for e in standings if e["played"] > 0)
+                total_matches = sum(e["played"] for e in standings if e["played"] > 0) / 2
+                if total_matches > 0:
+                    league_avg = total_goals / total_matches
+                    league_avg_goals_map[code] = round(league_avg, 2)
+                    logger.info(f"  ↳ {FOOTBALL_COMPETITIONS.get(code, code)} : {league_avg:.2f} buts/match")
+                else:
+                    # MET-2 : fallback sur les valeurs de référence par ligue (LEAGUE_AVG_GOALS)
+                    fallback_avg = LEAGUE_AVG_GOALS.get(
+                        code, POISSON_PARAMS.get("default_league_avg_goals", 2.65)
+                    )
+                    league_avg_goals_map[code] = fallback_avg
+                    logger.debug(
+                        f"  ↳ {FOOTBALL_COMPETITIONS.get(code, code)} : "
+                        f"pas de standings — fallback {fallback_avg:.2f} buts/match"
+                    )
+
+                for entry in standings:
+                    if entry["played"] >= POISSON_PARAMS["min_matches"]:
+                        team_stats[entry["team"]] = {
+                            "goals_avg":    entry["goals_for"] / entry["played"],
+                            "conceded_avg": entry["goals_against"] / entry["played"],
+                            "matches":      entry["played"],
+                            "league_code":  code,
+                        }
+                real_fixtures.extend(fixtures)
 
         # Enrichir les fixtures avec la moyenne de buts et l'avantage domicile de leur ligue
         for fix in real_fixtures:
