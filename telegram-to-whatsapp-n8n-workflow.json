@@ -1,0 +1,541 @@
+{
+  "name": "Telegram → WhatsApp Relay",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [220, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-photo",
+              "leftValue": "={{ $json.message.photo }}",
+              "rightValue": "",
+              "operator": {
+                "type": "exists",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-photo",
+      "name": "Has Photo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-document",
+              "leftValue": "={{ $json.message.document }}",
+              "rightValue": "",
+              "operator": {
+                "type": "exists",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-document",
+      "name": "Has Document?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-audio",
+              "leftValue": "={{ $json.message.voice || $json.message.audio }}",
+              "rightValue": "",
+              "operator": {
+                "type": "exists",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-audio",
+      "name": "Has Audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 640]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-video",
+              "leftValue": "={{ $json.message.video }}",
+              "rightValue": "",
+              "operator": {
+                "type": "exists",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-video",
+      "name": "Has Video?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 880]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"messaging_product\": \"whatsapp\",\n  \"to\": $env.WHATSAPP_GROUP_ID || $env.WHATSAPP_RECIPIENT_NUMBER,\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"📨 *\" + ($json.message.from.first_name || 'Utilisateur') + ($json.message.from.last_name ? ' ' + $json.message.from.last_name : '') + \"* (Telegram):\\n\\n\" + ($json.message.text || '[Message sans texte]')\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "send-text-whatsapp",
+      "name": "Send Text to WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "WHATSAPP_AUTH_CREDENTIAL_ID",
+          "name": "WhatsApp Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getFile?file_id={{ $json.message.photo ? $json.message.photo[$json.message.photo.length - 1].file_id : '' }}",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "get-photo-file",
+      "name": "Get Photo File Path",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 60]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"messaging_product\": \"whatsapp\",\n  \"to\": $env.WHATSAPP_GROUP_ID || $env.WHATSAPP_RECIPIENT_NUMBER,\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"https://api.telegram.org/file/bot\" + $env.TELEGRAM_BOT_TOKEN + \"/\" + $json.result.file_path,\n    \"caption\": \"📨 *\" + ($('Telegram Trigger').item.json.message.from.first_name || 'Utilisateur') + \"* (Telegram)\" + ($('Telegram Trigger').item.json.message.caption ? ':\\n' + $('Telegram Trigger').item.json.message.caption : '')\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "send-photo-whatsapp",
+      "name": "Send Photo to WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 60],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "WHATSAPP_AUTH_CREDENTIAL_ID",
+          "name": "WhatsApp Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getFile?file_id={{ $json.message.document ? $json.message.document.file_id : '' }}",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "get-document-file",
+      "name": "Get Document File Path",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 340]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"messaging_product\": \"whatsapp\",\n  \"to\": $env.WHATSAPP_GROUP_ID || $env.WHATSAPP_RECIPIENT_NUMBER,\n  \"type\": \"document\",\n  \"document\": {\n    \"link\": \"https://api.telegram.org/file/bot\" + $env.TELEGRAM_BOT_TOKEN + \"/\" + $json.result.file_path,\n    \"caption\": \"📨 *\" + ($('Telegram Trigger').item.json.message.from.first_name || 'Utilisateur') + \"* (Telegram)\",\n    \"filename\": $('Telegram Trigger').item.json.message.document.file_name || 'document'\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "send-document-whatsapp",
+      "name": "Send Document to WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 340],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "WHATSAPP_AUTH_CREDENTIAL_ID",
+          "name": "WhatsApp Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getFile?file_id={{ $json.message.voice ? $json.message.voice.file_id : ($json.message.audio ? $json.message.audio.file_id : '') }}",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "get-audio-file",
+      "name": "Get Audio File Path",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 580]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"messaging_product\": \"whatsapp\",\n  \"to\": $env.WHATSAPP_GROUP_ID || $env.WHATSAPP_RECIPIENT_NUMBER,\n  \"type\": \"audio\",\n  \"audio\": {\n    \"link\": \"https://api.telegram.org/file/bot\" + $env.TELEGRAM_BOT_TOKEN + \"/\" + $json.result.file_path\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "send-audio-whatsapp",
+      "name": "Send Audio to WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 580],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "WHATSAPP_AUTH_CREDENTIAL_ID",
+          "name": "WhatsApp Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getFile?file_id={{ $json.message.video ? $json.message.video.file_id : '' }}",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "get-video-file",
+      "name": "Get Video File Path",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 820]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"messaging_product\": \"whatsapp\",\n  \"to\": $env.WHATSAPP_GROUP_ID || $env.WHATSAPP_RECIPIENT_NUMBER,\n  \"type\": \"video\",\n  \"video\": {\n    \"link\": \"https://api.telegram.org/file/bot\" + $env.TELEGRAM_BOT_TOKEN + \"/\" + $json.result.file_path,\n    \"caption\": \"📨 *\" + ($('Telegram Trigger').item.json.message.from.first_name || 'Utilisateur') + \"* (Telegram)\"\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "send-video-whatsapp",
+      "name": "Send Video to WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 820],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "WHATSAPP_AUTH_CREDENTIAL_ID",
+          "name": "WhatsApp Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-text-only",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "exists",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-text",
+      "name": "Is Text Only?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 1060]
+    },
+    {
+      "parameters": {},
+      "id": "router-node",
+      "name": "Route by Message Type",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [340, 540],
+      "notes": "Ce nœud distribue le message vers les branches de routage selon le type de contenu"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Has Photo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has Document?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has Audio?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has Video?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Text Only?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Photo?": {
+      "main": [
+        [
+          {
+            "node": "Get Photo File Path",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Has Document?": {
+      "main": [
+        [
+          {
+            "node": "Get Document File Path",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Has Audio?": {
+      "main": [
+        [
+          {
+            "node": "Get Audio File Path",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Has Video?": {
+      "main": [
+        [
+          {
+            "node": "Get Video File Path",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Is Text Only?": {
+      "main": [
+        [
+          {
+            "node": "Send Text to WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Get Photo File Path": {
+      "main": [
+        [
+          {
+            "node": "Send Photo to WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Document File Path": {
+      "main": [
+        [
+          {
+            "node": "Send Document to WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Audio File Path": {
+      "main": [
+        [
+          {
+            "node": "Send Audio to WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Video File Path": {
+      "main": [
+        [
+          {
+            "node": "Send Video to WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "relay",
+      "id": "1"
+    },
+    {
+      "name": "telegram",
+      "id": "2"
+    },
+    {
+      "name": "whatsapp",
+      "id": "3"
+    }
+  ],
+  "triggerCount": 1,
+  "pinData": {}
+}
