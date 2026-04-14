@@ -212,7 +212,8 @@ def compute_elo_ratings(all_games: List[dict]) -> Dict[str, float]:
         home_score = game.get("home_team_score", 0)
         away_score = game.get("visitor_team_score", 0)
 
-        if home_team and away_team and (home_score or away_score):
+        # Vérifier la présence des noms d'équipes et que les scores ne sont pas None
+        if home_team and away_team and home_score is not None and away_score is not None:
             update(home_team, away_team, home_score, away_score)
 
     return ratings
