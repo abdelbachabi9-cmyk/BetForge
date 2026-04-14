@@ -1654,8 +1654,10 @@ class CouponBuilder:
                 if dist < best_distance:
                     best_distance = dist
                     best_coupon = combo_list
-            # Si on a trouvé un bon coupon à cette taille, on s'arrête
-            if best_coupon:
+            # S'arrêter uniquement si le meilleur coupon trouvé est dans la fourchette.
+            # FIX v8 : l'ancienne version s'arrêtait dès la 1ère taille même si la
+            # cote totale dépassait max_total — on continuait avec des tailles plus petites.
+            if best_coupon and self.min_total <= self.total_odd(best_coupon) <= self.max_total:
                 break
 
         if not best_coupon:
@@ -2198,6 +2200,15 @@ def run_pipeline() -> Tuple[List[dict], str]:
 
         logger.info(f"  ↳ {len(odds_index)} entrées de cotes indexées")
 
+        # FIX v8 — Détection précoce : si aucune cote disponible, basculer démo immédiatement
+        # Évite le cas : fixtures enrichis mais odds_index vide → 0 bets → coupon vide
+        if not odds_index:
+            logger.warning(
+                "  ↳ API cotes indisponible (0 entrées) — basculement immédiat en mode démo"
+            )
+            data = fetcher.get_demo_data()
+            is_demo = True
+
         # Récupérer les fixtures et classements football
         team_stats: Dict[str, dict] = {}
         league_avg_goals_map: Dict[str, float] = {}  # Moyenne buts par ligue
@@ -2262,6 +2273,13 @@ def run_pipeline() -> Tuple[List[dict], str]:
                     recent_results, fix["away"]
                 )
                 data["football"].append(fix)
+
+        # FIX v8 — logs de diagnostic granulaires
+        logger.info(
+            f"  ↳ {len(real_fixtures)} fixtures bruts | "
+            f"{len(team_stats)} équipes avec stats | "
+            f"{len(data['football'])} matchs enrichis"
+        )
 
         if not data["football"]:
             logger.warning("  ↳ Aucun match réel enrichi — fallback démo")
@@ -2402,6 +2420,47 @@ def run_pipeline() -> Tuple[List[dict], str]:
     logger.info(
         f"  ↳ {len(all_bets)} paris candidats → {len(best_bets)} retenus"
     )
+
+    # FIX v8 — Dernier recours : si aucun pari viable en mode réel (ex: fixtures
+    # trouvés mais cotes non matchées), relancer complètement en mode démo.
+    # Ce cas n'était pas couvert par le fallback fixture-level de l'étape 1.
+    if not best_bets and not is_demo:
+        logger.warning(
+            "  ↳ Aucun value bet en mode réel (cotes non matchées ?) "
+            "— relance complète en mode démo"
+        )
+        demo_data = fetcher.get_demo_data()
+        is_demo = True
+        selector._demo_odd_fn = demo_data.get("demo_odd_fn")
+        # Re-calculer les prédictions sur les données démo
+        demo_fb: List[dict] = []
+        for fix in demo_data.get("football", []):
+            try:
+                demo_fb.append(poisson_model.predict(fix))
+            except Exception as e:
+                logger.warning(f"  ↳ Erreur démo football : {e}")
+        demo_bb: List[dict] = []
+        for fix in demo_data.get("basketball", []):
+            try:
+                demo_bb.append(elo_model.predict(fix))
+            except Exception as e:
+                logger.warning(f"  ↳ Erreur démo basket : {e}")
+        demo_tn: List[dict] = []
+        for fix in demo_data.get("tennis", []):
+            try:
+                demo_tn.append(tennis_model.predict(fix))
+            except Exception as e:
+                logger.warning(f"  ↳ Erreur démo tennis : {e}")
+        demo_bets: List[dict] = []
+        for pred in demo_fb:
+            demo_bets.extend(selector.extract_football_bets(pred, None))
+        for pred in demo_bb:
+            demo_bets.extend(selector.extract_basketball_bets(pred, None))
+        for pred in demo_tn:
+            demo_bets.extend(selector.extract_tennis_bets(pred, None))
+        best_bets = selector.select_best_bets(demo_bets)
+        data = demo_data
+        logger.info(f"  ↳ Démo fallback : {len(best_bets)} paris retenus")
 
     # ── 5. Construction du coupon ────────────────────────────────
     logger.info("🏗️  Étape 5/5 : Construction du coupon optimal…")
