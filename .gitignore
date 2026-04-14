@@ -12,6 +12,7 @@ build/
 .env
 .env.*
 *.env
+!.env.example
 
 # Données générées (ne pas versionner — contenu sensible/dynamique)
 coupon_history.json
