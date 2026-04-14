@@ -177,7 +177,7 @@ def format_coupon_telegram(coupon: list, date: str) -> str:
     Format minimaliste : 2 lignes par sélection.
     """
     if not coupon:
-        return "⚽ *Pas de matchs disponibles aujourd'hui* \."
+        return "⚽ *Pas de matchs disponibles aujourd'hui* \\."
 
     # Calculs globaux
     total_odd = round(
@@ -341,7 +341,7 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """Commande /history — Affiche l'historique des derniers coupons."""
     if not _db or not _backtester:
         await update.message.reply_text(
-            "⚠️ Module de persistance non disponible\.",
+            "⚠️ Module de persistance non disponible\\.",
             parse_mode=ParseMode.MARKDOWN_V2
         )
         return
@@ -349,7 +349,7 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     history = _db.get_history(days=30)
     if not history:
         await update.message.reply_text(
-            "📭 Aucun coupon dans l'historique\.",
+            "📭 Aucun coupon dans l'historique\\.",
             parse_mode=ParseMode.MARKDOWN_V2
         )
         return
@@ -363,13 +363,13 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Commande /stats — Affiche les statistiques de performance."""
     if not _backtester:
         await update.message.reply_text(
-            "⚠️ Module de backtesting non disponible\.",
+            "⚠️ Module de backtesting non disponible\\.",
             parse_mode=ParseMode.MARKDOWN_V2
         )
         return
 
     wait_msg = await update.message.reply_text(
-        "📊 _Calcul des statistiques en cours\.\.\._",
+        "📊 _Calcul des statistiques en cours\\.\\.\\._",
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
@@ -389,7 +389,7 @@ async def cmd_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """
     if not _db:
         await update.message.reply_text(
-            "⚠️ Module de persistance non disponible\.",
+            "⚠️ Module de persistance non disponible\\.",
             parse_mode=ParseMode.MARKDOWN_V2
         )
         return
@@ -412,7 +412,7 @@ async def cmd_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         coupon_detail = _db.get_coupon_detail(coupon_id)
         if not coupon_detail:
             await update.message.reply_text(
-                f"❌ Coupon \#{_esc(str(coupon_id))} non trouvé\.",
+                f"❌ Coupon \\#{_esc(str(coupon_id))} non trouvé\\.",
                 parse_mode=ParseMode.MARKDOWN_V2
             )
             return
@@ -429,16 +429,16 @@ async def cmd_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         _db.update_coupon_result(coupon_id, result, profit)
 
         emoji = '✅' if result == 'won' else '❌' if result == 'lost' else '⚪'
-        sign = '\+' if profit >= 0 else ''
+        sign = '\\+' if profit >= 0 else ''
         await update.message.reply_text(
-            f"{emoji} Coupon \#{_esc(str(coupon_id))} → *{_esc(result)}*\n"
+            f"{emoji} Coupon \\#{_esc(str(coupon_id))} → *{_esc(result)}*\n"
             f"💰 Profit : {sign}{_esc(str(profit))} unités",
             parse_mode=ParseMode.MARKDOWN_V2
         )
 
     except (ValueError, IndexError):
         await update.message.reply_text(
-            "❌ Format invalide\. Usage : `/result <id> <won|lost|void>`",
+            "❌ Format invalide\\. Usage : `/result <id> <won|lost|void>`",
             parse_mode=ParseMode.MARKDOWN_V2
         )
 
@@ -623,6 +623,7 @@ def main() -> None:
         callback=scheduled_coupon,
         time=send_time,
         name="daily_coupon"
+    )
     # R4 : Job de resolution automatique des resultats (chaque nuit a 01h00)
     resolve_time = dt_time(hour=1, minute=0, second=0, tzinfo=tz)
     application.job_queue.run_daily(
@@ -631,7 +632,6 @@ def main() -> None:
         name="daily_resolve_results"
     )
     logger.info("Job resolution resultats planifie a 01:00 ({TIMEZONE})")
-    )
     logger.info(f"â° Job quotidien planifiÃ© Ã  {send_time.strftime('%H:%M')} ({TIMEZONE})")
 
     # ââ Lancement du bot ââââââââââââââââââââââââââââââââââââââââââ
