@@ -16,9 +16,10 @@ build/
 
 # Données générées (ne pas versionner — contenu sensible/dynamique)
 coupon_history.json
-nba_elo_ratings.json
 apex.db
 *.db
+# nba_elo_ratings.json est versionné intentionnellement :
+# Railway en a besoin au démarrage pour activer le basketball en mode réel.
 
 # IDE
 .vscode/

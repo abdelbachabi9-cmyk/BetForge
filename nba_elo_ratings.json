@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-04-14T16:16:13.361363",
+  "seasons": [
+    2025,
+    2026
+  ],
+  "total_teams": 30,
+  "ratings": {
+    "Atlanta Hawks": 1570.22,
+    "Boston Celtics": 1656.25,
+    "Brooklyn Nets": 1307.96,
+    "Charlotte Hornets": 1585.48,
+    "Chicago Bulls": 1370.23,
+    "Cleveland Cavaliers": 1607.34,
+    "Dallas Mavericks": 1367.04,
+    "Denver Nuggets": 1635.61,
+    "Detroit Pistons": 1655.84,
+    "Golden State Warriors": 1424.17,
+    "Houston Rockets": 1585.7,
+    "Indiana Pacers": 1325.25,
+    "LA Clippers": 1533.68,
+    "Los Angeles Lakers": 1609.3,
+    "Memphis Grizzlies": 1311.0,
+    "Miami Heat": 1507.8,
+    "Milwaukee Bucks": 1400.1,
+    "Minnesota Timberwolves": 1559.36,
+    "New Orleans Pelicans": 1399.5,
+    "New York Knicks": 1612.13,
+    "Oklahoma City Thunder": 1695.87,
+    "Orlando Magic": 1541.23,
+    "Philadelphia 76ers": 1533.48,
+    "Phoenix Suns": 1519.41,
+    "Portland Trail Blazers": 1523.74,
+    "Sacramento Kings": 1355.72,
+    "San Antonio Spurs": 1702.72,
+    "Toronto Raptors": 1528.19,
+    "Utah Jazz": 1309.11,
+    "Washington Wizards": 1266.56
+  }
+}
