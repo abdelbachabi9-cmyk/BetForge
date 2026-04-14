@@ -514,16 +514,17 @@ class DataFetcher:
         # En mode démo, on simule des cotes qui ne dépendent PAS
         # des probabilités modèle, pour éviter le raisonnement circulaire.
         # On simule la perspective du bookmaker avec sa propre estimation.
-        def independent_demo_odd(true_prob: float, bookmaker_error: float = 0.025,
+        def independent_demo_odd(true_prob: float, bookmaker_error: float = 0.07,
                                   margin: float = 0.05) -> float:
             """
             Simule une cote bookmaker indépendante.
             Le bookmaker a sa propre estimation (avec erreur aléatoire)
             et applique sa marge.
 
-            ⚠️  bookmaker_error=0.025 simule des bookmakers réalistes des top
-            leagues européennes (précision ±2-3%). Ancienne valeur de 0.08
-            surestimait massivement les value bets en mode démo.
+            bookmaker_error=0.07 : erreur bookmaker ±7%, calibrée pour que des
+            value bets (edge ≥ 5%) apparaissent en mode démo sur toute la plage
+            de probabilités (0.13–0.56). Valeur de 0.025 était trop stricte —
+            rendait mathématiquement impossible tout value bet pour p > 27%.
             """
             # Le bookmaker estime la proba avec une erreur aléatoire
             bookie_estimate = true_prob + rng.uniform(-bookmaker_error, bookmaker_error)
@@ -713,12 +714,12 @@ class PoissonModel:
         matrix = self.score_matrix(lambda_h, lambda_a, rho=rho)
 
         # Probabilités 1X2
-        # FIX T4 : matrice indexée [home_goals][away_goals]
-        #   triu(k=1) = home_goals > away_goals → victoire domicile
-        #   tril(k=-1) = away_goals > home_goals → victoire extérieur
-        p_home = float(np.sum(np.triu(matrix, 1)))
+        # matrix[i][j] = P(home=i buts, away=j buts)
+        # tril(k=-1) : entrées où i > j → home_goals > away_goals → victoire domicile
+        # triu(k=+1) : entrées où j > i → away_goals > home_goals → victoire extérieur
+        p_home = float(np.sum(np.tril(matrix, -1)))
         p_draw = float(np.sum(np.diag(matrix)))
-        p_away = float(np.sum(np.tril(matrix, -1)))
+        p_away = float(np.sum(np.triu(matrix, 1)))
 
         # Over/Under 2.5 buts
         p_over = 0.0
